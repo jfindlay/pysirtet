@@ -8,9 +8,9 @@ class PySirtet(wx.Frame):
     def __init__(self, parent, title):
         wx.Frame.__init__(self, parent, title=title, size=(180, 380))
 
-        self.initFrame()
+        self.init_frame()
 
-    def initFrame(self):
+    def init_frame(self):
         self.statusbar = self.CreateStatusBar()
         self.statusbar.SetStatusText('0')
         self.board = Board(self)
@@ -30,96 +30,96 @@ class Board(wx.Panel):
     def __init__(self, parent):
         wx.Panel.__init__(self, parent)
 
-        self.initBoard()
+        self.init_board()
 
-    def initBoard(self):
+    def init_board(self):
         self.timer = wx.Timer(self, Board.ID_TIMER)
-        self.isWaitingAfterLine = False
-        self.curPiece = Shape()
-        self.nextPiece = Shape()
+        self.is_waiting_after_line = False
+        self.cur_piece = Shape()
+        self.next_piece = Shape()
         self.curX = 0
         self.curY = 0
-        self.numLinesRemoved = 0
+        self.num_lines_removed = 0
         self.board = []
 
-        self.isStarted = False
-        self.isPaused = False
+        self.is_started = False
+        self.is_paused = False
 
         self.Bind(wx.EVT_PAINT, self.OnPaint)
         self.Bind(wx.EVT_KEY_DOWN, self.OnKeyDown)
         self.Bind(wx.EVT_TIMER, self.OnTimer, id=Board.ID_TIMER)
 
-        self.clearBoard()
+        self.clear_board()
 
-    def shapeAt(self, x, y):
-        return self.board[(y * Board.BoardWidth) + x]
+    def shape_at(self, x, y):
+        return self.board[(y*Board.BoardWidth) + x]
 
-    def setShapeAt(self, x, y, shape):
-        self.board[(y * Board.BoardWidth) + x] = shape
+    def set_shape_at(self, x, y, shape):
+        self.board[(y*Board.BoardWidth) + x] = shape
 
-    def squareWidth(self):
-        return self.GetClientSize().GetWidth() / Board.BoardWidth
+    def square_width(self):
+        return self.GetClientSize().GetWidth()/Board.BoardWidth
 
-    def squareHeight(self):
-        return self.GetClientSize().GetHeight() / Board.BoardHeight
+    def square_height(self):
+        return self.GetClientSize().GetHeight()/Board.BoardHeight
 
     def start(self):
-        if self.isPaused:
+        if self.is_paused:
             return
 
-        self.isStarted = True
-        self.isWaitingAfterLine = False
-        self.numLinesRemoved = 0
-        self.clearBoard()
+        self.is_started = True
+        self.is_waiting_after_line = False
+        self.num_lines_removed = 0
+        self.clear_board()
 
-        self.newPiece()
+        self.new_piece()
         self.timer.Start(Board.Speed)
 
     def pause(self):
-        if not self.isStarted:
+        if not self.is_started:
             return
 
-        self.isPaused = not self.isPaused
+        self.is_paused = not self.is_paused
         statusbar = self.GetParent().statusbar
 
-        if self.isPaused:
+        if self.is_paused:
             self.timer.Stop()
             statusbar.SetStatusText('paused')
         else:
             self.timer.Start(Board.Speed)
-            statusbar.SetStatusText(str(self.numLinesRemoved))
+            statusbar.SetStatusText(str(self.num_lines_removed))
 
         self.Refresh()
 
-    def clearBoard(self):
-        for i in range(Board.BoardHeight * Board.BoardWidth):
+    def clear_board(self):
+        for i in range(Board.BoardHeight*Board.BoardWidth):
             self.board.append(Tetrominoes.NoShape)
 
     def OnPaint(self, event):
         dc = wx.PaintDC(self)
 
         size = self.GetClientSize()
-        boardTop = size.GetHeight() - Board.BoardHeight * self.squareHeight()
+        board_top = size.GetHeight() - Board.BoardHeight*self.square_height()
 
         for i in range(Board.BoardHeight):
             for j in range(Board.BoardWidth):
-                shape = self.shapeAt(j, Board.BoardHeight - i - 1)
+                shape = self.shape_at(j, Board.BoardHeight - i - 1)
                 if shape != Tetrominoes.NoShape:
-                    self.drawSquare(dc,
-                        0 + j * self.squareWidth(),
-                        boardTop + i * self.squareHeight(), shape)
+                    self.draw_square(dc,
+                        0 + j*self.square_width(),
+                        board_top + i*self.square_height(), shape)
 
-        if self.curPiece.shape() != Tetrominoes.NoShape:
+        if self.cur_piece.shape() != Tetrominoes.NoShape:
             for i in range(4):
-                x = self.curX + self.curPiece.x(i)
-                y = self.curY - self.curPiece.y(i)
-                self.drawSquare(dc, 0 + x * self.squareWidth(),
-                    boardTop + (Board.BoardHeight - y - 1) * self.squareHeight(),
-                    self.curPiece.shape())
+                x = self.curX + self.cur_piece.x(i)
+                y = self.curY - self.cur_piece.y(i)
+                self.draw_square(dc, 0 + x*self.square_width(),
+                    board_top + (Board.BoardHeight - y - 1)*self.square_height(),
+                    self.cur_piece.shape())
 
 
     def OnKeyDown(self, event):
-        if not self.isStarted or self.curPiece.shape() == Tetrominoes.NoShape:
+        if not self.is_started or self.cur_piece.shape() == Tetrominoes.NoShape:
             event.Skip()
             return
 
@@ -128,122 +128,122 @@ class Board(wx.Panel):
         if keycode == ord('P') or keycode == ord('p'):
             self.pause()
             return
-        if self.isPaused:
+        if self.is_paused:
             return
         elif keycode == wx.WXK_LEFT:
-            self.tryMove(self.curPiece, self.curX - 1, self.curY)
+            self.try_move(self.cur_piece, self.curX - 1, self.curY)
         elif keycode == wx.WXK_RIGHT:
-            self.tryMove(self.curPiece, self.curX + 1, self.curY)
+            self.try_move(self.cur_piece, self.curX + 1, self.curY)
         elif keycode == wx.WXK_DOWN:
-            self.tryMove(self.curPiece.rotatedRight(), self.curX, self.curY)
+            self.try_move(self.cur_piece.rotated_right(), self.curX, self.curY)
         elif keycode == wx.WXK_UP:
-            self.tryMove(self.curPiece.rotatedLeft(), self.curX, self.curY)
+            self.try_move(self.cur_piece.rotated_left(), self.curX, self.curY)
         elif keycode == wx.WXK_SPACE:
-            self.dropDown()
+            self.drop_down()
         elif keycode == ord('D') or keycode == ord('d'):
-            self.oneLineDown()
+            self.one_line_down()
         else:
             event.Skip()
 
 
     def OnTimer(self, event):
         if event.GetId() == Board.ID_TIMER:
-            if self.isWaitingAfterLine:
-                self.isWaitingAfterLine = False
-                self.newPiece()
+            if self.is_waiting_after_line:
+                self.is_waiting_after_line = False
+                self.new_piece()
             else:
-                self.oneLineDown()
+                self.one_line_down()
         else:
             event.Skip()
 
 
-    def dropDown(self):
+    def drop_down(self):
         newY = self.curY
 
         while newY > 0:
-            if not self.tryMove(self.curPiece, self.curX, newY - 1):
+            if not self.try_move(self.cur_piece, self.curX, newY - 1):
                 break
             newY -= 1
 
-        self.pieceDropped()
+        self.piece_dropped()
 
-    def oneLineDown(self):
-        if not self.tryMove(self.curPiece, self.curX, self.curY - 1):
-            self.pieceDropped()
+    def one_line_down(self):
+        if not self.try_move(self.cur_piece, self.curX, self.curY - 1):
+            self.piece_dropped()
 
 
-    def pieceDropped(self):
+    def piece_dropped(self):
         for i in range(4):
-            x = self.curX + self.curPiece.x(i)
-            y = self.curY - self.curPiece.y(i)
-            self.setShapeAt(x, y, self.curPiece.shape())
+            x = self.curX + self.cur_piece.x(i)
+            y = self.curY - self.cur_piece.y(i)
+            self.set_shape_at(x, y, self.cur_piece.shape())
 
-        self.removeFullLines()
+        self.remove_full_lines()
 
-        if not self.isWaitingAfterLine:
-            self.newPiece()
+        if not self.is_waiting_after_line:
+            self.new_piece()
 
 
-    def removeFullLines(self):
-        numFullLines = 0
+    def remove_full_lines(self):
+        num_full_lines = 0
 
         statusbar = self.GetParent().statusbar
 
-        rowsToRemove = []
+        rows_to_remove = []
 
         for i in range(Board.BoardHeight):
             n = 0
             for j in range(Board.BoardWidth):
-                if not self.shapeAt(j, i) == Tetrominoes.NoShape:
+                if not self.shape_at(j, i) == Tetrominoes.NoShape:
                     n = n + 1
 
             if n == 10:
-                rowsToRemove.append(i)
+                rows_to_remove.append(i)
 
-        rowsToRemove.reverse()
+        rows_to_remove.reverse()
 
-        for m in rowsToRemove:
+        for m in rows_to_remove:
             for k in range(m, Board.BoardHeight):
                 for l in range(Board.BoardWidth):
-                        self.setShapeAt(l, k, self.shapeAt(l, k + 1))
+                        self.set_shape_at(l, k, self.shape_at(l, k + 1))
 
-            numFullLines = numFullLines + len(rowsToRemove)
+            num_full_lines = num_full_lines + len(rows_to_remove)
 
-            if numFullLines > 0:
-                self.numLinesRemoved = self.numLinesRemoved + numFullLines
-                statusbar.SetStatusText(str(self.numLinesRemoved))
-                self.isWaitingAfterLine = True
-                self.curPiece.setShape(Tetrominoes.NoShape)
+            if num_full_lines > 0:
+                self.num_lines_removed = self.num_lines_removed + num_full_lines
+                statusbar.SetStatusText(str(self.num_lines_removed))
+                self.is_waiting_after_line = True
+                self.cur_piece.set_shape(Tetrominoes.NoShape)
                 self.Refresh()
 
 
-    def newPiece(self):
-        self.curPiece = self.nextPiece
+    def new_piece(self):
+        self.cur_piece = self.next_piece
         statusbar = self.GetParent().statusbar
-        self.nextPiece.setRandomShape()
-        self.curX = Board.BoardWidth / 2 + 1
-        self.curY = Board.BoardHeight - 1 + self.curPiece.minY()
+        self.next_piece.set_random_shape()
+        self.curX = Board.BoardWidth/2 + 1
+        self.curY = Board.BoardHeight - 1 + self.cur_piece.minY()
 
-        if not self.tryMove(self.curPiece, self.curX, self.curY):
+        if not self.try_move(self.cur_piece, self.curX, self.curY):
 
-            self.curPiece.setShape(Tetrominoes.NoShape)
+            self.cur_piece.set_shape(Tetrominoes.NoShape)
             self.timer.Stop()
-            self.isStarted = False
+            self.is_started = False
             statusbar.SetStatusText('Game over')
 
 
-    def tryMove(self, newPiece, newX, newY):
+    def try_move(self, new_piece, newX, newY):
         for i in range(4):
 
-            x = newX + newPiece.x(i)
-            y = newY - newPiece.y(i)
+            x = newX + new_piece.x(i)
+            y = newY - new_piece.y(i)
 
             if x < 0 or x >= Board.BoardWidth or y < 0 or y >= Board.BoardHeight:
                 return False
-            if self.shapeAt(x, y) != Tetrominoes.NoShape:
+            if self.shape_at(x, y) != Tetrominoes.NoShape:
                 return False
 
-        self.curPiece = newPiece
+        self.cur_piece = new_piece
         self.curX = newX
         self.curY = newY
         self.Refresh()
@@ -251,7 +251,7 @@ class Board(wx.Panel):
         return True
 
 
-    def drawSquare(self, dc, x, y, shape):
+    def draw_square(self, dc, x, y, shape):
         colors = ['#000000', '#CC6666', '#66CC66', '#6666CC',
                   '#CCCC66', '#CC66CC', '#66CCCC', '#DAAA00']
 
@@ -265,22 +265,22 @@ class Board(wx.Panel):
         pen.SetCap(wx.CAP_PROJECTING)
         dc.SetPen(pen)
 
-        dc.DrawLine(x, y + self.squareHeight() - 1, x, y)
-        dc.DrawLine(x, y, x + self.squareWidth() - 1, y)
+        dc.DrawLine(x, y + self.square_height() - 1, x, y)
+        dc.DrawLine(x, y, x + self.square_width() - 1, y)
 
         darkpen = wx.Pen(dark[shape])
         darkpen.SetCap(wx.CAP_PROJECTING)
         dc.SetPen(darkpen)
 
-        dc.DrawLine(x + 1, y + self.squareHeight() - 1,
-            x + self.squareWidth() - 1, y + self.squareHeight() - 1)
-        dc.DrawLine(x + self.squareWidth() - 1,
-        y + self.squareHeight() - 1, x + self.squareWidth() - 1, y + 1)
+        dc.DrawLine(x + 1, y + self.square_height() - 1,
+            x + self.square_width() - 1, y + self.square_height() - 1)
+        dc.DrawLine(x + self.square_width() - 1,
+        y + self.square_height() - 1, x + self.square_width() - 1, y + 1)
 
         dc.SetPen(wx.TRANSPARENT_PEN)
         dc.SetBrush(wx.Brush(colors[shape]))
-        dc.DrawRectangle(x + 1, y + 1, self.squareWidth() - 2,
-        self.squareHeight() - 2)
+        dc.DrawRectangle(x + 1, y + 1, self.square_width() - 2,
+        self.square_height() - 2)
 
 
 class Tetrominoes(object):
@@ -295,7 +295,7 @@ class Tetrominoes(object):
 
 
 class Shape(object):
-    coordsTable = (
+    coords_table = (
         ((0, 0),     (0, 0),     (0, 0),     (0, 0)),
         ((0, -1),    (0, 0),     (-1, 0),    (-1, 1)),
         ((0, -1),    (0, 0),     (1, 0),     (1, 1)),
@@ -308,23 +308,23 @@ class Shape(object):
 
     def __init__(self):
         self.coords = [[0,0] for i in range(4)]
-        self.pieceShape = Tetrominoes.NoShape
+        self.piece_shape = Tetrominoes.NoShape
 
-        self.setShape(Tetrominoes.NoShape)
+        self.set_shape(Tetrominoes.NoShape)
 
     def shape(self):
-        return self.pieceShape
+        return self.piece_shape
 
-    def setShape(self, shape):
-        table = Shape.coordsTable[shape]
+    def set_shape(self, shape):
+        table = Shape.coords_table[shape]
         for i in range(4):
             for j in range(2):
                 self.coords[i][j] = table[i][j]
 
-        self.pieceShape = shape
+        self.piece_shape = shape
 
-    def setRandomShape(self):
-        self.setShape(random.randint(1, 7))
+    def set_random_shape(self):
+        self.set_shape(random.randint(1, 7))
 
     def x(self, index):
         return self.coords[index][0]
@@ -367,12 +367,12 @@ class Shape(object):
 
         return m
 
-    def rotatedLeft(self):
-        if self.pieceShape == Tetrominoes.SquareShape:
+    def rotated_left(self):
+        if self.piece_shape == Tetrominoes.SquareShape:
             return self
 
         result = Shape()
-        result.pieceShape = self.pieceShape
+        result.piece_shape = self.piece_shape
 
         for i in range(4):
             result.setX(i, self.y(i))
@@ -380,12 +380,12 @@ class Shape(object):
 
         return result
 
-    def rotatedRight(self):
-        if self.pieceShape == Tetrominoes.SquareShape:
+    def rotated_right(self):
+        if self.piece_shape == Tetrominoes.SquareShape:
             return self
 
         result = Shape()
-        result.pieceShape = self.pieceShape
+        result.piece_shape = self.piece_shape
 
         for i in range(4):
             result.setX(i, -self.y(i))
