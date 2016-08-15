@@ -1,19 +1,33 @@
-#!/usr/bin/python
+#!/usr/bin/env python2
 
+import re
 import wx
 import random
+from argparse import ArgumentParser,ArgumentTypeError,ArgumentDefaultsHelpFormatter
 
 
 class PySirtet(wx.Frame):
-    def __init__(self, parent, title):
-        wx.Frame.__init__(self, parent, title=title, size=(180, 380))
+    '''
+    Main game window
+    '''
+    def __init__(self, opts):
+        '''
+        Setup game window
+        '''
+        # Create frame
+        wx.Frame.__init__(self,
+                          parent=None,
+                          title='PySirtet',
+                          size=(opts['geom']['wid'], opts['geom']['hei']))
 
-        self.init_frame()
+        # Store program options
+        self.opts = opts
 
-    def init_frame(self):
+        # Setup additional features and attributes of the game window
         self.statusbar = self.CreateStatusBar()
         self.statusbar.SetStatusText('0')
-        self.board = Board(self)
+
+        self.board = Board(self, opts)
         self.board.SetFocus()
         self.board.start()
 
@@ -27,16 +41,21 @@ class Board(wx.Panel):
     Speed = 300
     ID_TIMER = 1
 
-    def __init__(self, parent):
+    def __init__(self, parent, opts):
+        '''
+        Setup block board
+        '''
+        # Create panel
         wx.Panel.__init__(self, parent)
 
-        self.init_board()
+        # Store program options
+        self.opts = opts
 
-    def init_board(self):
+        # Setup additional features and attributes of the game panel
         self.timer = wx.Timer(self, Board.ID_TIMER)
         self.is_waiting_after_line = False
-        self.cur_piece = Shape()
-        self.next_piece = Shape()
+        self.cur_piece = Polyomino()
+        self.next_piece = Polyomino()
         self.curX = 0
         self.curY = 0
         self.num_lines_removed = 0
@@ -84,7 +103,7 @@ class Board(wx.Panel):
 
         if self.is_paused:
             self.timer.Stop()
-            statusbar.SetStatusText('paused')
+            statusbar.SetStatusText('{} (paused)'.format(self.num_lines_removed))
         else:
             self.timer.Start(Board.Speed)
             statusbar.SetStatusText(str(self.num_lines_removed))
@@ -294,7 +313,7 @@ class Tetrominoes(object):
     MirroredLShape = 7
 
 
-class Shape(object):
+class Polyomino(object):
     coords_table = (
         ((0, 0),     (0, 0),     (0, 0),     (0, 0)),
         ((0, -1),    (0, 0),     (-1, 0),    (-1, 1)),
@@ -306,7 +325,8 @@ class Shape(object):
         ((1, -1),    (0, -1),    (0, 0),     (0, 1))
     )
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+
         self.coords = [[0,0] for i in range(4)]
         self.piece_shape = Tetrominoes.NoShape
 
@@ -316,7 +336,7 @@ class Shape(object):
         return self.piece_shape
 
     def set_shape(self, shape):
-        table = Shape.coords_table[shape]
+        table = Polyomino.coords_table[shape]
         for i in range(4):
             for j in range(2):
                 self.coords[i][j] = table[i][j]
@@ -368,10 +388,7 @@ class Shape(object):
         return m
 
     def rotated_left(self):
-        if self.piece_shape == Tetrominoes.SquareShape:
-            return self
-
-        result = Shape()
+        result = Polyomino()
         result.piece_shape = self.piece_shape
 
         for i in range(4):
@@ -381,10 +398,7 @@ class Shape(object):
         return result
 
     def rotated_right(self):
-        if self.piece_shape == Tetrominoes.SquareShape:
-            return self
-
-        result = Shape()
+        result = Polyomino()
         result.piece_shape = self.piece_shape
 
         for i in range(4):
@@ -394,10 +408,116 @@ class Shape(object):
         return result
 
 
+tetrominoes = {
+    'Z': Polyomino(
+        coords=((0, -1), (0, 0), (-1, 0), (-1, 1)),
+        colors={'normal': '#CC6666',
+                'light' : '#F89FAB',
+                'dark'  : '#803C3B'}
+    ),
+    'S': Polyomino(
+        coords=((0, -1), (0, 0), (1, 0), (1, 1)),
+        colors={'normal': '#66CC66',
+                'light' : '#79FC79',
+                'dark'  : '#3B803B'}
+    ),
+    'l': Polyomino(
+        coords=((0, -1), (0, 0), (0, 1), (0, 2)),
+        colors={'normal': '#6666CC',
+                'light' : '#7979FC',
+                'dark'  : '#3B3B80'}
+    ),
+    'T': Polyomino(
+        coords=((-1, 0), (0, 0), (1, 0), (0, 1)),
+        colors={'normal': '#CCCC66',
+                'light' : '#FCFC79',
+                'dark'  : '#80803B'}
+    ),
+    'o': Polyomino(
+        coords=((0, 0), (1, 0), (0, 1), (1, 1)),
+        colors={'normal': '#CC66CC',
+                'light' : '#FC79FC',
+                'dark'  : '#803B80'}
+    ),
+    'L': Polyomino(
+        coords=((-1, -1), (0, -1), (0, 0), (0, 1)),
+        colors={'normal': '#66CCCC',
+                'light' : '#79FCFC',
+                'dark'  : '#3B8080'}
+    ),
+    'J': Polyomino(
+        coords=((1, -1), (0, -1), (0, 0), (0, 1)),
+        colors={'normal': '#DAAA00',
+                'light' : '#FCC600',
+                'dark'  : '#806200'}
+    ),
+}
+
+
+def get_opts():
+    '''
+    Setup program options
+    '''
+    def geom(arg):
+        '''
+        Validate geometry argument
+        '''
+        # Match data
+        geom_pattern = (r'(?P<wid>\d+)'         # width pixels
+                        r'(?P<mlt>[xX])'        # times
+                        r'(?P<hei>\d+)'         # height pixels
+                        r'(?:'                  # optional non-capturing group
+                            r'(?P<xsgn>[+-])*'  # x sign
+                            r'(?P<xoff>\d+)*'   # x offset
+                            r'(?P<ysgn>[+-])*'  # y sign
+                            r'(?P<yoff>\d+)*'   # y offset
+                        r')*')                  # close optional group
+        match = re.match(geom_pattern, arg)
+
+        # Validate size
+        if not match:
+            raise ArgumentTypeError('Incorrect size')
+
+        # Validate offset
+        extra = ('xsgn', 'xoff', 'ysgn', 'yoff')
+        found_extra = [match.group(token) for token in extra]
+        if any(found_extra) and not all(found_extra):
+            raise ArgumentTypeError('Incorrect offset')
+
+        # Construct return data and return
+        geom = {}
+        for token in ('wid', 'hei', 'xoff', 'yoff'):
+            value = match.group(token)
+            geom[token] = int(value) if value is not None else 0
+        for token in ('mlt', 'xsgn', 'ysgn'):
+            value = match.group(token)
+            geom[token] = value if value is not None else '+'
+        return geom
+
+    desc='Polyomino tessellation game written in wxPython'
+    arg_parser = ArgumentParser(description=desc,
+                                formatter_class=ArgumentDefaultsHelpFormatter)
+    arg_parser.add_argument('-g', '--geometry',
+                            dest='geom',
+                            default='180x380',
+                            type=geom,
+                            help='specify window geometry; see X(7) for info on'
+                                 ' how to specify geometries')
+
+    return vars(arg_parser.parse_args())
+
+
 def pysirtet():
-    app = wx.App()
-    PySirtet(None, title='PySirtet')
-    app.MainLoop()
+    '''
+    Execute the game
+    '''
+    try:
+        opts = get_opts()
+        app = wx.App()
+        PySirtet(opts)
+        app.MainLoop()
+    except KeyboardInterrupt:
+        exit(0)
 
 
 if __name__ == '__main__':
