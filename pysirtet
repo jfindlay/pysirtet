@@ -31,34 +31,34 @@ class Polyomino(object):
     def y(self, index):
         return self.coords[index][1]
 
-    def setX(self, index, x):
+    def set_x(self, index, x):
         self.coords[index][0] = x
 
-    def setY(self, index, y):
+    def set_y(self, index, y):
         self.coords[index][1] = y
 
-    def minX(self):
+    def min_x(self):
         m = self.coords[0][0]
         for i in range(4):
             m = min(m, self.coords[i][0])
 
         return m
 
-    def maxX(self):
+    def max_x(self):
         m = self.coords[0][0]
         for i in range(4):
             m = max(m, self.coords[i][0])
 
         return m
 
-    def minY(self):
+    def min_y(self):
         m = self.coords[0][1]
         for i in range(4):
             m = min(m, self.coords[i][1])
 
         return m
 
-    def maxY(self):
+    def max_y(self):
         m = self.coords[0][1]
 
         for i in range(4):
@@ -71,8 +71,8 @@ class Polyomino(object):
         result.piece_shape = self.piece_shape
 
         for i in range(4):
-            result.setX(i, self.y(i))
-            result.setY(i, -self.x(i))
+            result.set_x(i, self.y(i))
+            result.set_y(i, -self.x(i))
 
         return result
 
@@ -81,8 +81,8 @@ class Polyomino(object):
         result.piece_shape = self.piece_shape
 
         for i in range(4):
-            result.setX(i, -self.y(i))
-            result.setY(i, self.x(i))
+            result.set_x(i, -self.y(i))
+            result.set_y(i, self.x(i))
 
         return result
 
@@ -183,8 +183,8 @@ class Board(wx.Panel):
         self.is_waiting_after_line = False
         self.cur_piece = Polyomino()
         self.next_piece = Polyomino()
-        self.curX = 0
-        self.curY = 0
+        self.cur_x = 0
+        self.cur_y = 0
         self.num_lines_removed = 0
         self.board = []
 
@@ -257,8 +257,8 @@ class Board(wx.Panel):
 
         if self.cur_piece.shape() != Tetrominoes.NoShape:
             for i in range(4):
-                x = self.curX + self.cur_piece.x(i)
-                y = self.curY - self.cur_piece.y(i)
+                x = self.cur_x + self.cur_piece.x(i)
+                y = self.cur_y - self.cur_piece.y(i)
                 self.draw_square(dc, 0 + x*self.square_width(),
                     board_top + (Board.BoardHeight - y - 1)*self.square_height(),
                     self.cur_piece.shape())
@@ -277,13 +277,13 @@ class Board(wx.Panel):
         if self.is_paused:
             return
         elif keycode == wx.WXK_LEFT:
-            self.try_move(self.cur_piece, self.curX - 1, self.curY)
+            self.try_move(self.cur_piece, self.cur_x - 1, self.cur_y)
         elif keycode == wx.WXK_RIGHT:
-            self.try_move(self.cur_piece, self.curX + 1, self.curY)
+            self.try_move(self.cur_piece, self.cur_x + 1, self.cur_y)
         elif keycode == wx.WXK_DOWN:
-            self.try_move(self.cur_piece.rotated_right(), self.curX, self.curY)
+            self.try_move(self.cur_piece.rotated_right(), self.cur_x, self.cur_y)
         elif keycode == wx.WXK_UP:
-            self.try_move(self.cur_piece.rotated_left(), self.curX, self.curY)
+            self.try_move(self.cur_piece.rotated_left(), self.cur_x, self.cur_y)
         elif keycode == wx.WXK_SPACE:
             self.drop_down()
         elif keycode == ord('D') or keycode == ord('d'):
@@ -304,24 +304,24 @@ class Board(wx.Panel):
 
 
     def drop_down(self):
-        newY = self.curY
+        new_y = self.cur_y
 
-        while newY > 0:
-            if not self.try_move(self.cur_piece, self.curX, newY - 1):
+        while new_y > 0:
+            if not self.try_move(self.cur_piece, self.cur_x, new_y - 1):
                 break
-            newY -= 1
+            new_y -= 1
 
         self.piece_dropped()
 
     def one_line_down(self):
-        if not self.try_move(self.cur_piece, self.curX, self.curY - 1):
+        if not self.try_move(self.cur_piece, self.cur_x, self.cur_y - 1):
             self.piece_dropped()
 
 
     def piece_dropped(self):
         for i in range(4):
-            x = self.curX + self.cur_piece.x(i)
-            y = self.curY - self.cur_piece.y(i)
+            x = self.cur_x + self.cur_piece.x(i)
+            y = self.cur_y - self.cur_piece.y(i)
             self.set_shape_at(x, y, self.cur_piece.shape())
 
         self.remove_full_lines()
@@ -367,10 +367,10 @@ class Board(wx.Panel):
         self.cur_piece = self.next_piece
         statusbar = self.GetParent().statusbar
         self.next_piece.set_random_shape()
-        self.curX = Board.BoardWidth/2 + 1
-        self.curY = Board.BoardHeight - 1 + self.cur_piece.minY()
+        self.cur_x = Board.BoardWidth/2 + 1
+        self.cur_y = Board.BoardHeight - 1 + self.cur_piece.min_y()
 
-        if not self.try_move(self.cur_piece, self.curX, self.curY):
+        if not self.try_move(self.cur_piece, self.cur_x, self.cur_y):
 
             self.cur_piece.set_shape(Tetrominoes.NoShape)
             self.timer.Stop()
@@ -378,11 +378,11 @@ class Board(wx.Panel):
             statusbar.SetStatusText('Game over')
 
 
-    def try_move(self, new_piece, newX, newY):
+    def try_move(self, new_piece, new_x, new_y):
         for i in range(4):
 
-            x = newX + new_piece.x(i)
-            y = newY - new_piece.y(i)
+            x = new_x + new_piece.x(i)
+            y = new_y - new_piece.y(i)
 
             if x < 0 or x >= Board.BoardWidth or y < 0 or y >= Board.BoardHeight:
                 return False
@@ -390,8 +390,8 @@ class Board(wx.Panel):
                 return False
 
         self.cur_piece = new_piece
-        self.curX = newX
-        self.curY = newY
+        self.cur_x = new_x
+        self.cur_y = new_y
         self.Refresh()
 
         return True
