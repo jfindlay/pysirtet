@@ -7,23 +7,9 @@ from argparse import ArgumentParser,ArgumentTypeError,ArgumentDefaultsHelpFormat
 
 
 class Polyomino(object):
-    coords_table = (
-        ((0, 0),     (0, 0),     (0, 0),     (0, 0)),
-        ((0, -1),    (0, 0),     (-1, 0),    (-1, 1)),
-        ((0, -1),    (0, 0),     (1, 0),     (1, 1)),
-        ((0, -1),    (0, 0),     (0, 1),     (0, 2)),
-        ((-1, 0),    (0, 0),     (1, 0),     (0, 1)),
-        ((0, 0),     (1, 0),     (0, 1),     (1, 1)),
-        ((-1, -1),   (0, -1),    (0, 0),     (0, 1)),
-        ((1, -1),    (0, -1),    (0, 0),     (0, 1))
-    )
-
     def __init__(self, coords=(), colors={}):
         self.coords = coords
         self.colors = colors
-
-    def set_random_shape(self):
-        self.set_shape(random.randint(1, 7))
 
     def x(self, index):
         return self.coords[index][0]
@@ -38,37 +24,19 @@ class Polyomino(object):
         self.coords[index][1] = y
 
     def min_x(self):
-        m = self.coords[0][0]
-        for i in range(4):
-            m = min(m, self.coords[i][0])
-
-        return m
+        return min([self.coords[i][0] for i in range(4)])
 
     def max_x(self):
-        m = self.coords[0][0]
-        for i in range(4):
-            m = max(m, self.coords[i][0])
-
-        return m
+        return max([self.coords[i][0] for i in range(4)])
 
     def min_y(self):
-        m = self.coords[0][1]
-        for i in range(4):
-            m = min(m, self.coords[i][1])
-
-        return m
+        return min([self.coords[i][1] for i in range(4)])
 
     def max_y(self):
-        m = self.coords[0][1]
-
-        for i in range(4):
-            m = max(m, self.coords[i][1])
-
-        return m
+        return max([self.coords[i][1] for i in range(4)])
 
     def rotated_left(self):
-        result = Polyomino()
-        result.piece_shape = self.piece_shape
+        result = Polyomino(self.coords, self.colors)
 
         for i in range(4):
             result.set_x(i, self.y(i))
@@ -77,8 +45,7 @@ class Polyomino(object):
         return result
 
     def rotated_right(self):
-        result = Polyomino()
-        result.piece_shape = self.piece_shape
+        result = Polyomino(self.coords, self.colors)
 
         for i in range(4):
             result.set_x(i, -self.y(i))
