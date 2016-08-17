@@ -6,6 +6,133 @@ import random
 from argparse import ArgumentParser,ArgumentTypeError,ArgumentDefaultsHelpFormatter
 
 
+class Polyomino(object):
+    coords_table = (
+        ((0, 0),     (0, 0),     (0, 0),     (0, 0)),
+        ((0, -1),    (0, 0),     (-1, 0),    (-1, 1)),
+        ((0, -1),    (0, 0),     (1, 0),     (1, 1)),
+        ((0, -1),    (0, 0),     (0, 1),     (0, 2)),
+        ((-1, 0),    (0, 0),     (1, 0),     (0, 1)),
+        ((0, 0),     (1, 0),     (0, 1),     (1, 1)),
+        ((-1, -1),   (0, -1),    (0, 0),     (0, 1)),
+        ((1, -1),    (0, -1),    (0, 0),     (0, 1))
+    )
+
+    def __init__(self, coords=(), colors={}):
+        self.coords = coords
+        self.colors = colors
+
+    def set_random_shape(self):
+        self.set_shape(random.randint(1, 7))
+
+    def x(self, index):
+        return self.coords[index][0]
+
+    def y(self, index):
+        return self.coords[index][1]
+
+    def setX(self, index, x):
+        self.coords[index][0] = x
+
+    def setY(self, index, y):
+        self.coords[index][1] = y
+
+    def minX(self):
+        m = self.coords[0][0]
+        for i in range(4):
+            m = min(m, self.coords[i][0])
+
+        return m
+
+    def maxX(self):
+        m = self.coords[0][0]
+        for i in range(4):
+            m = max(m, self.coords[i][0])
+
+        return m
+
+    def minY(self):
+        m = self.coords[0][1]
+        for i in range(4):
+            m = min(m, self.coords[i][1])
+
+        return m
+
+    def maxY(self):
+        m = self.coords[0][1]
+
+        for i in range(4):
+            m = max(m, self.coords[i][1])
+
+        return m
+
+    def rotated_left(self):
+        result = Polyomino()
+        result.piece_shape = self.piece_shape
+
+        for i in range(4):
+            result.setX(i, self.y(i))
+            result.setY(i, -self.x(i))
+
+        return result
+
+    def rotated_right(self):
+        result = Polyomino()
+        result.piece_shape = self.piece_shape
+
+        for i in range(4):
+            result.setX(i, -self.y(i))
+            result.setY(i, self.x(i))
+
+        return result
+
+
+tetrominoes = {
+    'Z': Polyomino(
+        coords=((0, -1), (0, 0), (-1, 0), (-1, 1)),
+        colors={'normal': '#CC6666',
+                'light' : '#F89FAB',
+                'dark'  : '#803C3B'}
+    ),
+    'S': Polyomino(
+        coords=((0, -1), (0, 0), (1, 0), (1, 1)),
+        colors={'normal': '#66CC66',
+                'light' : '#79FC79',
+                'dark'  : '#3B803B'}
+    ),
+    'l': Polyomino(
+        coords=((0, -1), (0, 0), (0, 1), (0, 2)),
+        colors={'normal': '#6666CC',
+                'light' : '#7979FC',
+                'dark'  : '#3B3B80'}
+    ),
+    'T': Polyomino(
+        coords=((-1, 0), (0, 0), (1, 0), (0, 1)),
+        colors={'normal': '#CCCC66',
+                'light' : '#FCFC79',
+                'dark'  : '#80803B'}
+    ),
+    'o': Polyomino(
+        coords=((0, 0), (1, 0), (0, 1), (1, 1)),
+        colors={'normal': '#CC66CC',
+                'light' : '#FC79FC',
+                'dark'  : '#803B80'}
+    ),
+    'L': Polyomino(
+        coords=((-1, -1), (0, -1), (0, 0), (0, 1)),
+        colors={'normal': '#66CCCC',
+                'light' : '#79FCFC',
+                'dark'  : '#3B8080'}
+    ),
+    'J': Polyomino(
+        coords=((1, -1), (0, -1), (0, 0), (0, 1)),
+        colors={'normal': '#DAAA00',
+                'light' : '#FCC600',
+                'dark'  : '#806200'}
+    ),
+}
+
+
 class PySirtet(wx.Frame):
     '''
     Main game window
@@ -300,158 +427,6 @@ class Board(wx.Panel):
         dc.SetBrush(wx.Brush(colors[shape]))
         dc.DrawRectangle(x + 1, y + 1, self.square_width() - 2,
         self.square_height() - 2)
-
-
-class Tetrominoes(object):
-    NoShape = 0
-    ZShape = 1
-    SShape = 2
-    LineShape = 3
-    TShape = 4
-    SquareShape = 5
-    LShape = 6
-    MirroredLShape = 7
-
-
-class Polyomino(object):
-    coords_table = (
-        ((0, 0),     (0, 0),     (0, 0),     (0, 0)),
-        ((0, -1),    (0, 0),     (-1, 0),    (-1, 1)),
-        ((0, -1),    (0, 0),     (1, 0),     (1, 1)),
-        ((0, -1),    (0, 0),     (0, 1),     (0, 2)),
-        ((-1, 0),    (0, 0),     (1, 0),     (0, 1)),
-        ((0, 0),     (1, 0),     (0, 1),     (1, 1)),
-        ((-1, -1),   (0, -1),    (0, 0),     (0, 1)),
-        ((1, -1),    (0, -1),    (0, 0),     (0, 1))
-    )
-
-    def __init__(self, *args, **kwargs):
-
-        self.coords = [[0,0] for i in range(4)]
-        self.piece_shape = Tetrominoes.NoShape
-
-        self.set_shape(Tetrominoes.NoShape)
-
-    def shape(self):
-        return self.piece_shape
-
-    def set_shape(self, shape):
-        table = Polyomino.coords_table[shape]
-        for i in range(4):
-            for j in range(2):
-                self.coords[i][j] = table[i][j]
-
-        self.piece_shape = shape
-
-    def set_random_shape(self):
-        self.set_shape(random.randint(1, 7))
-
-    def x(self, index):
-        return self.coords[index][0]
-
-    def y(self, index):
-        return self.coords[index][1]
-
-    def setX(self, index, x):
-        self.coords[index][0] = x
-
-    def setY(self, index, y):
-        self.coords[index][1] = y
-
-    def minX(self):
-        m = self.coords[0][0]
-        for i in range(4):
-            m = min(m, self.coords[i][0])
-
-        return m
-
-    def maxX(self):
-        m = self.coords[0][0]
-        for i in range(4):
-            m = max(m, self.coords[i][0])
-
-        return m
-
-    def minY(self):
-        m = self.coords[0][1]
-        for i in range(4):
-            m = min(m, self.coords[i][1])
-
-        return m
-
-    def maxY(self):
-        m = self.coords[0][1]
-
-        for i in range(4):
-            m = max(m, self.coords[i][1])
-
-        return m
-
-    def rotated_left(self):
-        result = Polyomino()
-        result.piece_shape = self.piece_shape
-
-        for i in range(4):
-            result.setX(i, self.y(i))
-            result.setY(i, -self.x(i))
-
-        return result
-
-    def rotated_right(self):
-        result = Polyomino()
-        result.piece_shape = self.piece_shape
-
-        for i in range(4):
-            result.setX(i, -self.y(i))
-            result.setY(i, self.x(i))
-
-        return result
-
-
-tetrominoes = {
-    'Z': Polyomino(
-        coords=((0, -1), (0, 0), (-1, 0), (-1, 1)),
-        colors={'normal': '#CC6666',
-                'light' : '#F89FAB',
-                'dark'  : '#803C3B'}
-    ),
-    'S': Polyomino(
-        coords=((0, -1), (0, 0), (1, 0), (1, 1)),
-        colors={'normal': '#66CC66',
-                'light' : '#79FC79',
-                'dark'  : '#3B803B'}
-    ),
-    'l': Polyomino(
-        coords=((0, -1), (0, 0), (0, 1), (0, 2)),
-        colors={'normal': '#6666CC',
-                'light' : '#7979FC',
-                'dark'  : '#3B3B80'}
-    ),
-    'T': Polyomino(
-        coords=((-1, 0), (0, 0), (1, 0), (0, 1)),
-        colors={'normal': '#CCCC66',
-                'light' : '#FCFC79',
-                'dark'  : '#80803B'}
-    ),
-    'o': Polyomino(
-        coords=((0, 0), (1, 0), (0, 1), (1, 1)),
-        colors={'normal': '#CC66CC',
-                'light' : '#FC79FC',
-                'dark'  : '#803B80'}
-    ),
-    'L': Polyomino(
-        coords=((-1, -1), (0, -1), (0, 0), (0, 1)),
-        colors={'normal': '#66CCCC',
-                'light' : '#79FCFC',
-                'dark'  : '#3B8080'}
-    ),
-    'J': Polyomino(
-        coords=((1, -1), (0, -1), (0, 0), (0, 1)),
-        colors={'normal': '#DAAA00',
-                'light' : '#FCC600',
-                'dark'  : '#806200'}
-    ),
-}
 
 
 def get_opts():
