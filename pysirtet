@@ -2,12 +2,14 @@
 
 import re
 import wx
+import copy
 import random
 from argparse import ArgumentParser,ArgumentTypeError,ArgumentDefaultsHelpFormatter
 
 
 class Polyomino(object):
-    def __init__(self, coords=(), colors={}):
+    def __init__(self, name, coords, colors):
+        self.name = name
         self.coords = coords
         self.colors = colors
 
@@ -36,7 +38,7 @@ class Polyomino(object):
         return max([self.coords[i][1] for i in range(4)])
 
     def rotated_left(self):
-        result = Polyomino(self.coords, self.colors)
+        result = Polyomino(self.name, copy.deepcopy(self.coords), self.colors)
 
         for i in range(4):
             result.set_x(i, self.y(i))
@@ -45,7 +47,7 @@ class Polyomino(object):
         return result
 
     def rotated_right(self):
-        result = Polyomino(self.coords, self.colors)
+        result = Polyomino(self.name, copy.deepcopy(self.coords), self.colors)
 
         for i in range(4):
             result.set_x(i, -self.y(i))
@@ -54,50 +56,57 @@ class Polyomino(object):
         return result
 
 
-tetrominoes = {
-    'Z': Polyomino(
-        coords=((0, -1), (0, 0), (-1, 0), (-1, 1)),
+tetrominoes = [
+    Polyomino(
+        name='Z',
+        coords=[[0, -1], [0, 0], [-1, 0], [-1, 1]],
         colors={'normal': '#CC6666',
                 'light' : '#F89FAB',
                 'dark'  : '#803C3B'}
     ),
-    'S': Polyomino(
-        coords=((0, -1), (0, 0), (1, 0), (1, 1)),
+    Polyomino(
+        name='S',
+        coords=[[0, -1], [0, 0], [1, 0], [1, 1]],
         colors={'normal': '#66CC66',
                 'light' : '#79FC79',
                 'dark'  : '#3B803B'}
     ),
-    'l': Polyomino(
-        coords=((0, -1), (0, 0), (0, 1), (0, 2)),
+    Polyomino(
+        name='l',
+        coords=[[0, -1], [0, 0], [0, 1], [0, 2]],
         colors={'normal': '#6666CC',
                 'light' : '#7979FC',
                 'dark'  : '#3B3B80'}
     ),
-    'T': Polyomino(
-        coords=((-1, 0), (0, 0), (1, 0), (0, 1)),
+    Polyomino(
+        name='T',
+        coords=[[-1, 0], [0, 0], [1, 0], [0, 1]],
         colors={'normal': '#CCCC66',
                 'light' : '#FCFC79',
                 'dark'  : '#80803B'}
     ),
-    'o': Polyomino(
-        coords=((0, 0), (1, 0), (0, 1), (1, 1)),
+    Polyomino(
+        name='o',
+        coords=[[0, 0], [1, 0], [0, 1], [1, 1]],
         colors={'normal': '#CC66CC',
                 'light' : '#FC79FC',
                 'dark'  : '#803B80'}
     ),
-    'L': Polyomino(
-        coords=((-1, -1), (0, -1), (0, 0), (0, 1)),
+    Polyomino(
+        name='L',
+        coords=[[-1, -1], [0, -1], [0, 0], [0, 1]],
         colors={'normal': '#66CCCC',
                 'light' : '#79FCFC',
                 'dark'  : '#3B8080'}
     ),
-    'J': Polyomino(
-        coords=((1, -1), (0, -1), (0, 0), (0, 1)),
+    Polyomino(
+        name='J',
+        coords=[[1, -1], [0, -1], [0, 0], [0, 1]],
         colors={'normal': '#DAAA00',
                 'light' : '#FCC600',
                 'dark'  : '#806200'}
     ),
-}
+]
 
 
 class PySirtet(wx.Frame):
@@ -118,8 +127,7 @@ class PySirtet(wx.Frame):
         self.opts = opts
 
         # Setup additional features and attributes of the game window
-        self.statusbar = self.CreateStatusBar()
-        self.statusbar.SetStatusText('0')
+        self.status_bar = self.CreateStatusBar()
 
         self.board = Board(self, opts)
         self.board.SetFocus()
@@ -130,14 +138,14 @@ class PySirtet(wx.Frame):
 
 
 class Board(wx.Panel):
-    BoardWidth = 10
-    BoardHeight = 22
-    Speed = 300
+    '''
+    Game board
+    '''
     ID_TIMER = 1
 
     def __init__(self, parent, opts):
         '''
-        Setup block board
+        Setup board
         '''
         # Create panel
         wx.Panel.__init__(self, parent)
@@ -145,15 +153,20 @@ class Board(wx.Panel):
         # Store program options
         self.opts = opts
 
-        # Setup additional features and attributes of the game panel
+        # Setup additional features and attributes of the game board
+        self.height = opts['height']
+        self.width = opts['width']
+        self.speed = opts['initial_speed']
+
         self.timer = wx.Timer(self, Board.ID_TIMER)
-        self.is_waiting_after_line = False
-        self.cur_piece = Polyomino()
-        self.next_piece = Polyomino()
+        self.cur_piece = self.random_piece()
+        self.new_piece = self.random_piece()
         self.cur_x = 0
         self.cur_y = 0
-        self.num_lines_removed = 0
-        self.board = []
+
+        self.score = 0
+        self.clear_board()
+        self.update_status()
 
         self.is_started = False
         self.is_paused = False
@@ -162,77 +175,138 @@ class Board(wx.Panel):
         self.Bind(wx.EVT_KEY_DOWN, self.OnKeyDown)
         self.Bind(wx.EVT_TIMER, self.OnTimer, id=Board.ID_TIMER)
 
-        self.clear_board()
+    def random_piece(self):
+        '''
+        Randomly choose a polyomino
+        '''
+        return random.choice(sorted(tetrominoes))
 
-    def shape_at(self, x, y):
-        return self.board[(y*Board.BoardWidth) + x]
+    def get_piece(self, name):
+        '''
+        Return the piece corresponding to the given name
+        '''
+        for tetromino in tetrominoes:
+            if tetromino.name == name:
+                return tetromino
 
-    def set_shape_at(self, x, y, shape):
-        self.board[(y*Board.BoardWidth) + x] = shape
+    def clear_board(self):
+        '''
+        Setup and clear the board
+        '''
+        self.grid = [['' for i in range(self.height)] for j in range(self.width)]
 
-    def square_width(self):
-        return self.GetClientSize().GetWidth()/Board.BoardWidth
+    def update_status(self, state=''):
+        '''
+        Set status bar state
+        '''
+        # Get parent
+        status_bar = self.GetParent().status_bar
 
-    def square_height(self):
-        return self.GetClientSize().GetHeight()/Board.BoardHeight
+        if state == 'paused':
+            status_bar.SetStatusText('{} (Paused)'.format(self.score))
+        elif state == 'over':
+            status_bar.SetStatusText('{} (Game Over)'.format(self.score))
+        else:
+            status_bar.SetStatusText('{}'.format(self.score))
+
+    def piece_at(self, x, y):
+        '''
+        Find the name of the polyomino piece occupying the grid position
+        '''
+        try:
+            piece_name = self.grid[x][y]
+        except IndexError:
+            piece_name = 'L'
+            for row in self.grid:
+                row_str = ''
+                for element in row:
+                    row_str += ' ' if element == '' else element
+                print('"{}" {}'.format(row_str, len(row_str)))
+            print(len(self.grid), len(self.grid[0]), x, y)
+            raise
+
+        return piece_name
+
+    def set_piece_at(self, x, y, piece_name):
+        '''
+        Set the name of the polyomino piece at the grid position
+        '''
+        self.grid[x][y] = piece_name
+
+    def square_size(self):
+        '''
+        Return the size of a grid square
+        '''
+        width = self.GetClientSize().GetWidth()/self.width
+        height = self.GetClientSize().GetHeight()/self.height
+
+        return (width, height)
 
     def start(self):
+        '''
+        Start game
+        '''
         if self.is_paused:
             return
 
         self.is_started = True
-        self.is_waiting_after_line = False
-        self.num_lines_removed = 0
+        self.score = 0
         self.clear_board()
+        self.update_status()
 
-        self.new_piece()
-        self.timer.Start(Board.Speed)
+        self.next_piece()
+        self.timer.Start(self.speed)
 
     def pause(self):
+        '''
+        Pause game
+        '''
         if not self.is_started:
             return
 
         self.is_paused = not self.is_paused
-        statusbar = self.GetParent().statusbar
 
         if self.is_paused:
             self.timer.Stop()
-            statusbar.SetStatusText('{} (paused)'.format(self.num_lines_removed))
+            self.update_status('paused')
         else:
-            self.timer.Start(Board.Speed)
-            statusbar.SetStatusText(str(self.num_lines_removed))
+            self.timer.Start(self.speed)
+            self.update_status()
 
         self.Refresh()
 
-    def clear_board(self):
-        for i in range(Board.BoardHeight*Board.BoardWidth):
-            self.board.append(Tetrominoes.NoShape)
-
     def OnPaint(self, event):
+        '''
+        Paint event
+        '''
         dc = wx.PaintDC(self)
 
         size = self.GetClientSize()
-        board_top = size.GetHeight() - Board.BoardHeight*self.square_height()
+        square_width, square_height = self.square_size()
+        board_top = size.GetHeight() - self.height*square_height
 
-        for i in range(Board.BoardHeight):
-            for j in range(Board.BoardWidth):
-                shape = self.shape_at(j, Board.BoardHeight - i - 1)
-                if shape != Tetrominoes.NoShape:
+        for i in range(self.height):
+            for j in range(self.width):
+                piece_name = self.piece_at(j, self.height - i - 1)
+                if piece_name != '':
                     self.draw_square(dc,
-                        0 + j*self.square_width(),
-                        board_top + i*self.square_height(), shape)
+                        j*square_width,
+                        board_top + i*square_height, self.get_piece(piece_name))
 
-        if self.cur_piece.shape() != Tetrominoes.NoShape:
+        if self.cur_piece.name != '':
             for i in range(4):
                 x = self.cur_x + self.cur_piece.x(i)
                 y = self.cur_y - self.cur_piece.y(i)
-                self.draw_square(dc, 0 + x*self.square_width(),
-                    board_top + (Board.BoardHeight - y - 1)*self.square_height(),
-                    self.cur_piece.shape())
+                self.draw_square(dc, x*square_width,
+                    board_top + (self.height - y - 1)*square_height,
+                    self.cur_piece)
 
 
     def OnKeyDown(self, event):
-        if not self.is_started or self.cur_piece.shape() == Tetrominoes.NoShape:
+        '''
+        Key input event
+        '''
+        if not self.is_started or self.cur_piece.name == '':
             event.Skip()
             return
 
@@ -260,17 +334,19 @@ class Board(wx.Panel):
 
 
     def OnTimer(self, event):
+        '''
+        Timer step event
+        '''
         if event.GetId() == Board.ID_TIMER:
-            if self.is_waiting_after_line:
-                self.is_waiting_after_line = False
-                self.new_piece()
-            else:
-                self.one_line_down()
+            self.one_line_down()
         else:
             event.Skip()
 
 
     def drop_down(self):
+        '''
+        Move current piece as far down as possible and introduce next piece
+        '''
         new_y = self.cur_y
 
         while new_y > 0:
@@ -281,79 +357,89 @@ class Board(wx.Panel):
         self.piece_dropped()
 
     def one_line_down(self):
+        '''
+        Move current piece down one line
+        '''
         if not self.try_move(self.cur_piece, self.cur_x, self.cur_y - 1):
             self.piece_dropped()
 
-
     def piece_dropped(self):
+        '''
+        Introduce new piece at the top of the board
+        '''
         for i in range(4):
             x = self.cur_x + self.cur_piece.x(i)
             y = self.cur_y - self.cur_piece.y(i)
-            self.set_shape_at(x, y, self.cur_piece.shape())
+            self.set_piece_at(x, y, self.cur_piece.name)
 
         self.remove_full_lines()
 
-        if not self.is_waiting_after_line:
-            self.new_piece()
+        self.next_piece()
 
 
     def remove_full_lines(self):
+        '''
+        Remove a full line from the board
+        '''
         num_full_lines = 0
-
-        statusbar = self.GetParent().statusbar
-
         rows_to_remove = []
 
-        for i in range(Board.BoardHeight):
-            n = 0
-            for j in range(Board.BoardWidth):
-                if not self.shape_at(j, i) == Tetrominoes.NoShape:
-                    n = n + 1
-
-            if n == 10:
+        # Collect full rows
+        for i in range(self.height):
+            n = sum([1 for j in range(self.width) if self.piece_at(j, i) != ''])
+            if n == self.width:
                 rows_to_remove.append(i)
 
         rows_to_remove.reverse()
 
         for m in rows_to_remove:
-            for k in range(m, Board.BoardHeight):
-                for l in range(Board.BoardWidth):
-                        self.set_shape_at(l, k, self.shape_at(l, k + 1))
+            # Remove full rows and move all above rows down
+            for k in range(m, self.height):
+                for l in range(self.width):
+                    if k + 1 < self.height:
+                        self.set_piece_at(l, k, self.piece_at(l, k + 1))
+                    else:  # Top row
+                        self.set_piece_at(l, k, '')
 
-            num_full_lines = num_full_lines + len(rows_to_remove)
+            num_full_lines += len(rows_to_remove)
 
+            # Update game state
             if num_full_lines > 0:
-                self.num_lines_removed = self.num_lines_removed + num_full_lines
-                statusbar.SetStatusText(str(self.num_lines_removed))
-                self.is_waiting_after_line = True
-                self.cur_piece.set_shape(Tetrominoes.NoShape)
+                self.score = self.score + num_full_lines
+                self.update_status()
                 self.Refresh()
 
 
-    def new_piece(self):
-        self.cur_piece = self.next_piece
-        statusbar = self.GetParent().statusbar
-        self.next_piece.set_random_shape()
-        self.cur_x = Board.BoardWidth/2 + 1
-        self.cur_y = Board.BoardHeight - 1 + self.cur_piece.min_y()
+    def next_piece(self):
+        '''
+        Setup next piece
+        '''
+        # Cycle pieces
+        self.cur_piece = self.new_piece
+        self.new_piece = self.random_piece()
 
+        # Update grid cursor
+        self.cur_x = self.width/2 + 1
+        self.cur_y = self.height - 1 + self.cur_piece.min_y()
+
+        # Test halting condition
         if not self.try_move(self.cur_piece, self.cur_x, self.cur_y):
-
-            self.cur_piece.set_shape(Tetrominoes.NoShape)
             self.timer.Stop()
             self.is_started = False
-            statusbar.SetStatusText('Game over')
-
+            self.update_status('over')
 
     def try_move(self, new_piece, new_x, new_y):
+        '''
+        Attempt to transform (translate, rotate) current piece
+        '''
         for i in range(4):
 
             x = new_x + new_piece.x(i)
             y = new_y - new_piece.y(i)
 
-            if x < 0 or x >= Board.BoardWidth or y < 0 or y >= Board.BoardHeight:
+            if x < 0 or x >= self.width or y < 0 or y >= self.height:
                 return False
-            if self.shape_at(x, y) != Tetrominoes.NoShape:
+            if self.piece_at(x, y) != '':
                 return False
 
         self.cur_piece = new_piece
@@ -364,36 +450,36 @@ class Board(wx.Panel):
         return True
 
 
-    def draw_square(self, dc, x, y, shape):
-        colors = ['#000000', '#CC6666', '#66CC66', '#6666CC',
-                  '#CCCC66', '#CC66CC', '#66CCCC', '#DAAA00']
+    def draw_square(self, dc, x, y, piece):
+        '''
+        Draw a square on the board
+        '''
+        # Get square size
+        square_width, square_height = self.square_size()
 
-        light = ['#000000', '#F89FAB', '#79FC79', '#7979FC',
-                 '#FCFC79', '#FC79FC', '#79FCFC', '#FCC600']
-
-        dark = ['#000000', '#803C3B', '#3B803B', '#3B3B80',
-                 '#80803B', '#803B80', '#3B8080', '#806200']
-
-        pen = wx.Pen(light[shape])
+        # Draw light edges
+        pen = wx.Pen(piece.colors['light'])
         pen.SetCap(wx.CAP_PROJECTING)
         dc.SetPen(pen)
 
-        dc.DrawLine(x, y + self.square_height() - 1, x, y)
-        dc.DrawLine(x, y, x + self.square_width() - 1, y)
+        dc.DrawLine(x, y + square_height - 1, x, y)
+        dc.DrawLine(x, y, x + square_width - 1, y)
 
-        darkpen = wx.Pen(dark[shape])
+        # Draw dark edges
+        darkpen = wx.Pen(piece.colors['dark'])
         darkpen.SetCap(wx.CAP_PROJECTING)
         dc.SetPen(darkpen)
 
-        dc.DrawLine(x + 1, y + self.square_height() - 1,
-            x + self.square_width() - 1, y + self.square_height() - 1)
-        dc.DrawLine(x + self.square_width() - 1,
-        y + self.square_height() - 1, x + self.square_width() - 1, y + 1)
+        dc.DrawLine(x + 1, y + square_height - 1,
+            x + square_width - 1, y + square_height - 1)
+        dc.DrawLine(x + square_width - 1,
+            y + square_height - 1, x + square_width - 1, y + 1)
 
+        # Paint square surface
         dc.SetPen(wx.TRANSPARENT_PEN)
-        dc.SetBrush(wx.Brush(colors[shape]))
-        dc.DrawRectangle(x + 1, y + 1, self.square_width() - 2,
-        self.square_height() - 2)
+        dc.SetBrush(wx.Brush(piece.colors['normal']))
+        dc.DrawRectangle(x + 1, y + 1, square_width - 2,
+            square_height - 2)
 
 
 def get_opts():
@@ -408,11 +494,11 @@ def get_opts():
         geom_pattern = (r'(?P<wid>\d+)'         # width pixels
                         r'(?P<mlt>[xX])'        # times
                         r'(?P<hei>\d+)'         # height pixels
-                        r'(?:'                  # optional non-capturing group
+                        r'(?:'                  # optional non-capturing group for position
                             r'(?P<xsgn>[+-])*'  # x sign
-                            r'(?P<xoff>\d+)*'   # x offset
+                            r'(?P<xpos>\d+)*'   # x position
                             r'(?P<ysgn>[+-])*'  # y sign
-                            r'(?P<yoff>\d+)*'   # y offset
+                            r'(?P<ypos>\d+)*'   # y position
                         r')*')                  # close optional group
         match = re.match(geom_pattern, arg)
 
@@ -420,15 +506,15 @@ def get_opts():
         if not match:
             raise ArgumentTypeError('Incorrect size')
 
-        # Validate offset
-        extra = ('xsgn', 'xoff', 'ysgn', 'yoff')
+        # Validate position
+        extra = ('xsgn', 'xpos', 'ysgn', 'ypos')
         found_extra = [match.group(token) for token in extra]
         if any(found_extra) and not all(found_extra):
-            raise ArgumentTypeError('Incorrect offset')
+            raise ArgumentTypeError('Incorrect position')
 
         # Construct return data and return
         geom = {}
-        for token in ('wid', 'hei', 'xoff', 'yoff'):
+        for token in ('wid', 'hei', 'xpos', 'ypos'):
             value = match.group(token)
             geom[token] = int(value) if value is not None else 0
         for token in ('mlt', 'xsgn', 'ysgn'):
@@ -443,8 +529,24 @@ def get_opts():
                             dest='geom',
                             default='180x380',
                             type=geom,
-                            help='specify window geometry; see X(7) for info on'
+                            help='Specify window geometry; see X(7) for info on'
                                  ' how to specify geometries')
+    arg_parser.add_argument('-H', '--height',
+                            default=22,
+                            type=int,
+                            help='Board height')
+    arg_parser.add_argument('-W', '--width',
+                            default=10,
+                            type=int,
+                            help='Board width')
+    arg_parser.add_argument('-s', '--speed',
+                            dest='initial_speed',
+                            default=300,
+                            type=int,
+                            help='Initial game speed')
+    arg_parser.add_argument('-c', '--constant',
+                            action='store_true',
+                            help='Maintain constant game speed')
 
     return vars(arg_parser.parse_args())
 
