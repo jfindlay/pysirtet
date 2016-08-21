@@ -129,12 +129,34 @@ class PySirtet(wx.Frame):
         # Setup additional features and attributes of the game window
         self.status_bar = self.CreateStatusBar()
 
+        # Setup game panel
+        self.game = Game(self, opts)
+
+        # Display window
+        self.Centre()
+        self.Show(True)
+
+
+class Game(wx.Panel):
+    '''
+    Wrapper panel around the board panel so that the board's aspect ratio is
+    preserved on window resize.
+    '''
+    def __init__(self, parent, opts):
+        wx.Panel.__init__(self, parent)
+
+        # Store program options
+        self.opts = opts
+
+        # Setup board
         self.board = Board(self, opts)
         self.board.SetFocus()
         self.board.start()
 
-        self.Centre()
-        self.Show(True)
+        # Setup size
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        sizer.Add(self.board, 1, flag=wx.ALIGN_CENTER_HORIZONTAL|wx.SHAPED)
+        self.SetSizer(sizer)
 
 
 class Board(wx.Panel):
@@ -148,15 +170,18 @@ class Board(wx.Panel):
         Setup board
         '''
         # Create panel
-        wx.Panel.__init__(self, parent)
+        wx.Panel.__init__(self,
+                          parent,
+                          size=(opts['size']['wid'], opts['size']['hei']))
 
         # Store program options
         self.opts = opts
 
         # Setup additional features and attributes of the game board
-        self.height = opts['height']
-        self.width = opts['width']
-        self.speed = opts['initial_speed']
+        self.width = opts['size']['wid']
+        self.height = opts['size']['hei']
+        self.speed = opts['initial_speed'] or 350
+        self.SetBackgroundColour(wx.BLACK)
 
         self.timer = wx.Timer(self, Board.ID_TIMER)
         self.cur_piece = self.random_piece()
@@ -165,12 +190,15 @@ class Board(wx.Panel):
         self.cur_y = 0
 
         self.score = 0
+        self.rows_removed = 0
         self.clear_board()
         self.update_status()
 
+        # Setup states
         self.is_started = False
         self.is_paused = False
 
+        # Setup bindings
         self.Bind(wx.EVT_PAINT, self.OnPaint)
         self.Bind(wx.EVT_KEY_DOWN, self.OnKeyDown)
         self.Bind(wx.EVT_TIMER, self.OnTimer, id=Board.ID_TIMER)
@@ -179,7 +207,7 @@ class Board(wx.Panel):
         '''
         Randomly choose a polyomino
         '''
-        return random.choice(sorted(tetrominoes))
+        return random.choice(tetrominoes)
 
     def get_piece(self, name):
         '''
@@ -199,39 +227,19 @@ class Board(wx.Panel):
         '''
         Set status bar state
         '''
-        # Get parent
-        status_bar = self.GetParent().status_bar
+        # Get status bar
+        status_bar = self.GetParent().GetParent().status_bar
 
+        # Status text
+        status = ['Score: {}'.format(self.score),
+                  'Rows Removed: {}'.format(self.rows_removed)]
         if state == 'paused':
-            status_bar.SetStatusText('{} (Paused)'.format(self.score))
+            status.append('(Paused)')
         elif state == 'over':
-            status_bar.SetStatusText('{} (Game Over)'.format(self.score))
-        else:
-            status_bar.SetStatusText('{}'.format(self.score))
+            status.append('(Game Over)')
 
-    def piece_at(self, x, y):
-        '''
-        Find the name of the polyomino piece occupying the grid position
-        '''
-        try:
-            piece_name = self.grid[x][y]
-        except IndexError:
-            piece_name = 'L'
-            for row in self.grid:
-                row_str = ''
-                for element in row:
-                    row_str += ' ' if element == '' else element
-                print('"{}" {}'.format(row_str, len(row_str)))
-            print(len(self.grid), len(self.grid[0]), x, y)
-            raise
-
-        return piece_name
-
-    def set_piece_at(self, x, y, piece_name):
-        '''
-        Set the name of the polyomino piece at the grid position
-        '''
-        self.grid[x][y] = piece_name
+        # Set status
+        status_bar.SetStatusText(' | '.join(status))
 
     def square_size(self):
         '''
@@ -251,6 +259,7 @@ class Board(wx.Panel):
 
         self.is_started = True
         self.score = 0
+        self.rows_removed = 0
         self.clear_board()
         self.update_status()
 
@@ -287,7 +296,7 @@ class Board(wx.Panel):
 
         for i in range(self.height):
             for j in range(self.width):
-                piece_name = self.piece_at(j, self.height - i - 1)
+                piece_name = self.grid[j][self.height - i - 1]
                 if piece_name != '':
                     self.draw_square(dc,
                         j*square_width,
@@ -300,7 +309,6 @@ class Board(wx.Panel):
                 self.draw_square(dc, x*square_width,
                     board_top + (self.height - y - 1)*square_height,
                     self.cur_piece)
-
 
     def OnKeyDown(self, event):
         '''
@@ -328,20 +336,18 @@ class Board(wx.Panel):
         elif keycode == wx.WXK_SPACE:
             self.drop_down()
         elif keycode == ord('D') or keycode == ord('d'):
-            self.one_line_down()
+            self.one_row_down()
         else:
             event.Skip()
-
 
     def OnTimer(self, event):
         '''
         Timer step event
         '''
         if event.GetId() == Board.ID_TIMER:
-            self.one_line_down()
+            self.one_row_down()
         else:
             event.Skip()
-
 
     def drop_down(self):
         '''
@@ -356,9 +362,9 @@ class Board(wx.Panel):
 
         self.piece_dropped()
 
-    def one_line_down(self):
+    def one_row_down(self):
         '''
-        Move current piece down one line
+        Move current piece down one row
         '''
         if not self.try_move(self.cur_piece, self.cur_x, self.cur_y - 1):
             self.piece_dropped()
@@ -370,45 +376,46 @@ class Board(wx.Panel):
         for i in range(4):
             x = self.cur_x + self.cur_piece.x(i)
             y = self.cur_y - self.cur_piece.y(i)
-            self.set_piece_at(x, y, self.cur_piece.name)
+            self.grid[x][y] = self.cur_piece.name
 
-        self.remove_full_lines()
+        self.remove_full_rows()
 
         self.next_piece()
 
-
-    def remove_full_lines(self):
+    def remove_full_rows(self):
         '''
-        Remove a full line from the board
+        Remove a full row from the board
         '''
-        num_full_lines = 0
-        rows_to_remove = []
-
         # Collect full rows
+        full_rows = []
         for i in range(self.height):
-            n = sum([1 for j in range(self.width) if self.piece_at(j, i) != ''])
+            n = sum([1 for j in range(self.width) if self.grid[j][i] != ''])
             if n == self.width:
-                rows_to_remove.append(i)
+                full_rows.append(i)
+        full_rows.reverse()
 
-        rows_to_remove.reverse()
+        # Remove full rows and move all above rows down
+        for m in full_rows:
+            for l in range(self.width):
+                # All rows but top
+                for k in range(m, self.height - 1):
+                    self.grid[l][k] = self.grid[l][k + 1]
+                # Top row
+                self.grid[l][self.height - 1] = ''
 
-        for m in rows_to_remove:
-            # Remove full rows and move all above rows down
-            for k in range(m, self.height):
-                for l in range(self.width):
-                    if k + 1 < self.height:
-                        self.set_piece_at(l, k, self.piece_at(l, k + 1))
-                    else:  # Top row
-                        self.set_piece_at(l, k, '')
+        # Update game state
+        if len(full_rows):
+            self.update_score(len(full_rows))
+            self.update_status()
+            self.Refresh()
 
-            num_full_lines += len(rows_to_remove)
-
-            # Update game state
-            if num_full_lines > 0:
-                self.score = self.score + num_full_lines
-                self.update_status()
-                self.Refresh()
-
+    def update_score(self, num_full_rows):
+        '''
+        Update game score.  The score increases by a triangular sum of the
+        number of rows removed to incentivize removing more at once.
+        '''
+        self.score += sum([i for i in range(1, num_full_rows + 1)])  # TODO: factor in game level
+        self.rows_removed += num_full_rows
 
     def next_piece(self):
         '''
@@ -439,7 +446,7 @@ class Board(wx.Panel):
 
             if x < 0 or x >= self.width or y < 0 or y >= self.height:
                 return False
-            if self.piece_at(x, y) != '':
+            if self.grid[x][y] != '':
                 return False
 
         self.cur_piece = new_piece
@@ -448,7 +455,6 @@ class Board(wx.Panel):
         self.Refresh()
 
         return True
-
 
     def draw_square(self, dc, x, y, piece):
         '''
@@ -486,6 +492,27 @@ def get_opts():
     '''
     Setup program options
     '''
+    def size(arg):
+        '''
+        Validate size argument
+        '''
+        # Match data
+        size_pattern = (r'(?P<wid>\d+)'   # width pixels
+                        r'(?P<mlt>[xX])'  # times
+                        r'(?P<hei>\d+)')  # height pixels
+        match = re.match(size_pattern, arg)
+
+        # Validate size
+        if not match:
+            raise ArgumentTypeError('Incorrect size')
+
+        # Construct return data and return
+        geom = {}
+        for token in ('wid', 'hei'):
+            value = match.group(token)
+            geom[token] = int(value) if value is not None else 0
+        return geom
+
     def geom(arg):
         '''
         Validate geometry argument
@@ -517,7 +544,7 @@ def get_opts():
         for token in ('wid', 'hei', 'xpos', 'ypos'):
             value = match.group(token)
             geom[token] = int(value) if value is not None else 0
-        for token in ('mlt', 'xsgn', 'ysgn'):
+        for token in ('xsgn', 'ysgn'):
             value = match.group(token)
             geom[token] = value if value is not None else '+'
         return geom
@@ -527,28 +554,25 @@ def get_opts():
                                 formatter_class=ArgumentDefaultsHelpFormatter)
     arg_parser.add_argument('-g', '--geometry',
                             dest='geom',
-                            default='180x380',
                             type=geom,
                             help='Specify window geometry; see X(7) for info on'
                                  ' how to specify geometries')
-    arg_parser.add_argument('-H', '--height',
-                            default=22,
-                            type=int,
-                            help='Board height')
-    arg_parser.add_argument('-W', '--width',
-                            default=10,
-                            type=int,
-                            help='Board width')
-    arg_parser.add_argument('-s', '--speed',
+    arg_parser.add_argument('-s', '--size',
+                            default='10x22',
+                            type=size,
+                            help='Board size')
+    arg_parser.add_argument('-S', '--speed',
                             dest='initial_speed',
-                            default=300,
                             type=int,
-                            help='Initial game speed')
-    arg_parser.add_argument('-c', '--constant',
-                            action='store_true',
-                            help='Maintain constant game speed')
+                            help='Game speed; if set, the game will run'
+                                 ' constantly at this speed regardless of the'
+                                 ' number of removed rows')
 
-    return vars(arg_parser.parse_args())
+    args = vars(arg_parser.parse_args())
+    if not args['geom']:
+        args['geom'] = {'wid': 32*args['size']['wid'],
+                        'hei': 32*args['size']['hei']}
+    return args
 
 
 def pysirtet():
@@ -556,9 +580,8 @@ def pysirtet():
     Execute the game
     '''
     try:
-        opts = get_opts()
         app = wx.App()
-        PySirtet(opts)
+        PySirtet(get_opts())
         app.MainLoop()
     except KeyboardInterrupt:
         exit(0)

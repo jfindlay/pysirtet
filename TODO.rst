@@ -1,6 +1,7 @@
 Features
 ========
 
+- Unit tests
 - Add levels
 - Add skills (easy, medium, hard)
 - Configurable board size
@@ -12,7 +13,8 @@ Features
 - UI
 
   * Preview next piece
-  * Preserve board aspect with window resize
+  * Scale box edges and rounded corners to window size
+  * Move score, rows removed, and grid size info to box on the side under the next piece preview
 
 - Scoring
 
@@ -38,7 +40,7 @@ Features
 Packaging
 =========
 
-- depends on wxPython (should I alternatively or optionally use pyQT or pyGTK?)
+- depends on wxPython (should I alternatively or optionally use tkinter, etc.?)
 - pypi
 - ebuild
 - deb
