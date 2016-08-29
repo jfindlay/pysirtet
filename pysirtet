@@ -1,11 +1,13 @@
 #!/usr/bin/env python2
 
+import os
 import re
-import wx
 import copy
 import random
-from argparse import ArgumentParser,ArgumentTypeError,ArgumentDefaultsHelpFormatter
+import ConfigParser
+from argparse import ArgumentParser, ArgumentTypeError, ArgumentDefaultsHelpFormatter
 
+import wx
 
 class Polyomino(object):
     def __init__(self, name, coords, colors):
@@ -121,7 +123,7 @@ class PySirtet(wx.Frame):
         wx.Frame.__init__(self,
                           parent=None,
                           title='PySirtet',
-                          size=(opts['geom']['wid'], opts['geom']['hei']))
+                          size=(opts['geometry']['width'], opts['geometry']['height']))
 
         # Store program options
         self.opts = opts
@@ -172,15 +174,15 @@ class Board(wx.Panel):
         # Create panel
         wx.Panel.__init__(self,
                           parent,
-                          size=(opts['size']['wid'], opts['size']['hei']))
+                          size=(opts['size']['width'], opts['size']['height']))
 
         # Store program options
         self.opts = opts
 
         # Setup additional features and attributes of the game board
-        self.width = opts['size']['wid']
-        self.height = opts['size']['hei']
-        self.speed = opts['initial_speed'] or 350
+        self.width = opts['size']['width']
+        self.height = opts['size']['height']
+        self.speed = opts['speed'] or 700
         self.SetBackgroundColour(wx.BLACK)
 
         self.timer = wx.Timer(self, Board.ID_TIMER)
@@ -314,29 +316,43 @@ class Board(wx.Panel):
         '''
         Key input event
         '''
+        # Skip if not started or no piece
         if not self.is_started or self.cur_piece.name == '':
             event.Skip()
             return
 
         keycode = event.GetKeyCode()
 
-        if keycode == ord('P') or keycode == ord('p'):
+        # Pause
+        if keycode == ord(self.opts['keys']['pause'].upper()):
             self.pause()
             return
         if self.is_paused:
             return
-        elif keycode == wx.WXK_LEFT:
+
+        # Left
+        elif keycode == ord(self.opts['keys']['left_wall'].upper()):
             self.try_move(self.cur_piece, self.cur_x - 1, self.cur_y)
-        elif keycode == wx.WXK_RIGHT:
+        elif keycode == ord(self.opts['keys']['left'].upper()):
+            self.try_move(self.cur_piece, self.cur_x - 1, self.cur_y)
+
+        # Right
+        elif keycode == ord(self.opts['keys']['right'].upper()):
             self.try_move(self.cur_piece, self.cur_x + 1, self.cur_y)
-        elif keycode == wx.WXK_DOWN:
-            self.try_move(self.cur_piece.rotated_right(), self.cur_x, self.cur_y)
-        elif keycode == wx.WXK_UP:
+        elif keycode == ord(self.opts['keys']['right_wall'].upper()):
+            self.try_move(self.cur_piece, self.cur_x + 1, self.cur_y)
+
+        # Rotate
+        elif keycode == ord(self.opts['keys']['rotate_left'].upper()):
             self.try_move(self.cur_piece.rotated_left(), self.cur_x, self.cur_y)
-        elif keycode == wx.WXK_SPACE:
-            self.drop_down()
-        elif keycode == ord('D') or keycode == ord('d'):
+        elif keycode == ord(self.opts['keys']['rotate_right'].upper()):
+            self.try_move(self.cur_piece.rotated_right(), self.cur_x, self.cur_y)
+
+        # Down
+        elif keycode == ord(self.opts['keys']['down'].upper()):
             self.one_row_down()
+        elif keycode == ord(self.opts['keys']['drop'].upper()):
+            self.drop_down()
         else:
             event.Skip()
 
@@ -492,14 +508,25 @@ def get_opts():
     '''
     Setup program options
     '''
+    def config_file(arg):
+        '''
+        Create the file if it does not exist and return the path
+        '''
+        if not os.path.exists(arg):
+            path, file_name = os.path.split(arg)
+            if not os.path.exists(path):
+                os.makedirs(path)
+
+        return arg
+
     def size(arg):
         '''
         Validate size argument
         '''
         # Match data
-        size_pattern = (r'(?P<wid>\d+)'   # width pixels
-                        r'(?P<mlt>[xX])'  # times
-                        r'(?P<hei>\d+)')  # height pixels
+        size_pattern = (r'(?P<width>\d+)'    # width pixels
+                        r'(?P<mlt>[xX])'     # times
+                        r'(?P<height>\d+)')  # height pixels
         match = re.match(size_pattern, arg)
 
         # Validate size
@@ -507,20 +534,20 @@ def get_opts():
             raise ArgumentTypeError('Incorrect size')
 
         # Construct return data and return
-        geom = {}
-        for token in ('wid', 'hei'):
+        geometry = {}
+        for token in ('width', 'height'):
             value = match.group(token)
-            geom[token] = int(value) if value is not None else 0
-        return geom
+            geometry[token] = int(value) if value is not None else 0
+        return geometry
 
-    def geom(arg):
+    def geometry(arg):
         '''
         Validate geometry argument
         '''
         # Match data
-        geom_pattern = (r'(?P<wid>\d+)'         # width pixels
+        geom_pattern = (r'(?P<width>\d+)'       # width pixels
                         r'(?P<mlt>[xX])'        # times
-                        r'(?P<hei>\d+)'         # height pixels
+                        r'(?P<height>\d+)'      # height pixels
                         r'(?:'                  # optional non-capturing group for position
                             r'(?P<xsgn>[+-])*'  # x sign
                             r'(?P<xpos>\d+)*'   # x position
@@ -540,39 +567,118 @@ def get_opts():
             raise ArgumentTypeError('Incorrect position')
 
         # Construct return data and return
-        geom = {}
-        for token in ('wid', 'hei', 'xpos', 'ypos'):
+        geometry = {}
+        for token in ('width', 'height', 'xpos', 'ypos'):
             value = match.group(token)
-            geom[token] = int(value) if value is not None else 0
+            geometry[token] = int(value) if value is not None else 0
         for token in ('xsgn', 'ysgn'):
             value = match.group(token)
-            geom[token] = value if value is not None else '+'
-        return geom
+            geometry[token] = value if value is not None else '+'
+        return geometry
+
+    defaults = {
+        'config_file': os.path.join(os.environ.get('HOME', ''), '.config/pysirtet/pysirtet.conf'),
+        'size': {'width': 10, 'height': 22},
+        'geometry_scale': 32,  # Used to scale geometry size to the board size
+        'geometry': '',  # The default geometry is set after the size is known
+        'speed': 0,
+        'keys': {
+            'pause': 'p',
+            'left': ',',
+            'right': '.',
+            'left_wall': 'z',
+            'right_wall': '/',
+            'rotate_left': 'x',
+            'rotate_right': 'c',
+            'down': 'm',
+            'drop': 'v',
+        }
+    }
+    def default_geometry(size):
+        '''
+        Calculate the default geometry from the size
+        '''
+        return {'height': defaults['geometry_scale']*size['height'],
+                'width': defaults['geometry_scale']*size['width']}
+
+    def get_config(config_file):
+        '''
+        Read configs from config file
+        '''
+        opts = {}
+        config = ConfigParser.SafeConfigParser()
+        config.read(config_file)
+
+        # Window configs
+        if config.has_section('window'):
+            opts['size'] = config.get('window', 'size', vars=defaults)
+            opts['geometry'] = config.get('window', 'geometry', vars={'geometry': default_geometry(opts['size'])})
+        else:
+            opts['size'] = defaults['size']
+            opts['geometry'] = default_geometry(defaults['size'])
+
+        # Game configs
+        if config.has_section('game'):
+            opts['speed'] = config.get('game', 'speed', vars=defaults)
+        else:
+            opts['speed'] = defaults['speed']
+
+        # Keys configs
+        if config.has_section('keys'):
+            opts['keys'] = {}
+            for key in opts['keys'].keys():
+                opts['keys'][key] = config.get('keys', key, vars=defaults['keys'])
+        else:
+            opts['keys'] = defaults['keys']
+
+        return opts
 
     desc='Polyomino tessellation game written in wxPython'
     arg_parser = ArgumentParser(description=desc,
                                 formatter_class=ArgumentDefaultsHelpFormatter)
-    arg_parser.add_argument('-g', '--geometry',
-                            dest='geom',
-                            type=geom,
-                            help='Specify window geometry; see X(7) for info on'
-                                 ' how to specify geometries')
+    arg_parser.add_argument('-c', '--config-file',
+                            default=defaults['config_file'],
+                            type=config_file,
+                            help='Specify location of the config file')
     arg_parser.add_argument('-s', '--size',
-                            default='10x22',
+                            default='{0[width]}x{0[height]}'.format(defaults['size']),
                             type=size,
                             help='Board size')
+    arg_parser.add_argument('-g', '--geometry',
+                            default='{0[width]}x{0[height]}'.format(default_geometry(defaults['size'])),
+                            dest='geometry',
+                            type=geometry,
+                            help='Specify window geometry; see X(7) for info on'
+                                 ' how to specify geometries')
     arg_parser.add_argument('-S', '--speed',
-                            dest='initial_speed',
+                            default=defaults['speed'],
                             type=int,
                             help='Game speed; if set, the game will run'
                                  ' constantly at this speed regardless of the'
                                  ' number of removed rows')
 
     args = vars(arg_parser.parse_args())
-    if not args['geom']:
-        args['geom'] = {'wid': 32*args['size']['wid'],
-                        'hei': 32*args['size']['hei']}
-    return args
+
+    # Load configs from config file
+    opts = get_config(args['config_file'])
+
+    # Default window size to a scale factor of the board size
+    if args['size'] != defaults['size']:
+        if (args['geometry']['width'] == default_geometry(defaults['size'])['width']
+            and args['geometry']['height'] == default_geometry(defaults['size'])['height']):
+            args['geometry'].update(default_geometry(args['size']))
+
+    # Override configs with values from command line
+    opts.update(args)
+
+    return opts
+
+
+def write_config(opts):
+    '''
+    Save game configs to file when config dialog is closed
+    '''
+    # TODO
 
 
 def pysirtet():

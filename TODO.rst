@@ -16,6 +16,10 @@ Features
   * Scale box edges and rounded corners to window size
   * Move score, rows removed, and grid size info to box on the side under the next piece preview
 
+- Config
+
+  * Read and write to config file
+
 - Scoring
 
   * Implement ksirtet's scoring formulas
