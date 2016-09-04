@@ -1,4 +1,5 @@
 #!/usr/bin/env python2
+# -*- coding: utf-8 -*-
 
 import os
 import re
@@ -9,56 +10,83 @@ from argparse import ArgumentParser, ArgumentTypeError, ArgumentDefaultsHelpForm
 
 import wx
 
+
 class Polyomino(object):
-    def __init__(self, name, coords, colors):
+    def __init__(self, name, colors, coords, origin=[0, 0]):
         self.name = name
-        self.coords = coords
         self.colors = colors
 
-    def x(self, index):
-        return self.coords[index][0]
+        self.o = origin  # Origin of the polyomino's 'proper' reference frame
+        self.x = [c[0] for c in coords]
+        self.y = [c[1] for c in coords]
 
-    def y(self, index):
-        return self.coords[index][1]
+    def _check_constraints(self, r, constraints):
+        '''
+        Validate whether the coordinates r = (x_i, y_i) are within the constraints
+        '''
+        # check that r points to the interior of the grid
+        if r[0] < 0 or r[1] < 0:
+            return False
+        if r[0] > len(constraints) - 1:
+            return False
+        if r[1] > len(constraints[r[0]]) - 1:
+            return False
+        # Only the empty grid squares are allowed
+        if constraints[r[0]][r[1]] != '':
+            return False
 
-    def set_x(self, index, x):
-        self.coords[index][0] = x
+        return True
 
-    def set_y(self, index, y):
-        self.coords[index][1] = y
+    def rotate(self, direction, constraints):
+        '''
+        Rotate polyomino clockwise (cw) or counterclockwise (ccw) about its
+        proper origin if the resulting transformation is contained within the
+        constraints
+        '''
+        # Prepare new coordinates and rotation tensor
+        x = [] ; y = []
+        sgn = +1 if direction == 'cw' else -1  # ccw
 
-    def min_x(self):
-        return min([self.coords[i][0] for i in range(4)])
+        # Apply rotation tensor if allowed
+        for i, c in enumerate(self.x):
+            x[i] = -sgn*(self.y[i] - self.o[1]) + self.o[0]
+            y[i] = sgn*(self.x[i] - self.o[0]) + self.o[1]
+            if not self._check_constraints(x[i], y[i], constraints):
+                return False
 
-    def max_x(self):
-        return max([self.coords[i][0] for i in range(4)])
+        # Set new coordinates
+        self.x = x ; self.y = y
+        return True
 
-    def min_y(self):
-        return min([self.coords[i][1] for i in range(4)])
+    def translate(self, v, constraints):
+        '''
+        Translate polyomino by the vector v if the resulting transformation is
+        contained within the constraints
+        '''
+        # Redefine v as explicit coordinates in the board reference frame
+        if v[0] == 'min':
+            v = [-min(self.x), 0]
+        elif v[0] == 'max':
+            v = [len(constraints) - max(self.x), 0]
 
-    def max_y(self):
-        return max([self.coords[i][1] for i in range(4)])
+        # Prepare new coordinates and new proper origin
+        x = [] ; y = []
+        o = [self.o[0] + v[0], self.o[1] + v[1]]
 
-    def rotated_left(self):
-        result = Polyomino(self.name, copy.deepcopy(self.coords), self.colors)
+        # Apply translation vector v if allowed
+        for i, c in enumerate(self.x):
+            x[i] = self.x[i] + v[0]
+            y[i] = self.y[i] + v[1]
+            if not self._check_constraints(x[i], y[i], constraints):
+                return False
 
-        for i in range(4):
-            result.set_x(i, self.y(i))
-            result.set_y(i, -self.x(i))
-
-        return result
-
-    def rotated_right(self):
-        result = Polyomino(self.name, copy.deepcopy(self.coords), self.colors)
-
-        for i in range(4):
-            result.set_x(i, -self.y(i))
-            result.set_y(i, self.x(i))
-
-        return result
+        # Set new coordinates and proper origin at translated position
+        self.x = x ; self.y = y
+        self.o = o
+        return True
 
 
-tetrominoes = [
+tetrominoes = (
     Polyomino(
         name='Z',
         coords=[[0, -1], [0, 0], [-1, 0], [-1, 1]],
@@ -108,7 +136,7 @@ tetrominoes = [
                 'light' : '#FCC600',
                 'dark'  : '#806200'}
     ),
-]
+)
 
 
 class PySirtet(wx.Frame):
@@ -332,21 +360,21 @@ class Board(wx.Panel):
 
         # Left
         elif keycode == ord(self.opts['keys']['left_wall'].upper()):
-            self.try_move(self.cur_piece, self.cur_x - 1, self.cur_y)
+            self.transform(self.cur_piece, self.cur_x - 1, self.cur_y)
         elif keycode == ord(self.opts['keys']['left'].upper()):
-            self.try_move(self.cur_piece, self.cur_x - 1, self.cur_y)
+            self.transform(self.cur_piece, self.cur_x - 1, self.cur_y)
 
         # Right
         elif keycode == ord(self.opts['keys']['right'].upper()):
-            self.try_move(self.cur_piece, self.cur_x + 1, self.cur_y)
+            self.transform(self.cur_piece, self.cur_x + 1, self.cur_y)
         elif keycode == ord(self.opts['keys']['right_wall'].upper()):
-            self.try_move(self.cur_piece, self.cur_x + 1, self.cur_y)
+            self.transform(self.cur_piece, self.cur_x + 1, self.cur_y)
 
         # Rotate
         elif keycode == ord(self.opts['keys']['rotate_left'].upper()):
-            self.try_move(self.cur_piece.rotated_left(), self.cur_x, self.cur_y)
+            self.transform(self.cur_piece.rotated_left(), self.cur_x, self.cur_y)
         elif keycode == ord(self.opts['keys']['rotate_right'].upper()):
-            self.try_move(self.cur_piece.rotated_right(), self.cur_x, self.cur_y)
+            self.transform(self.cur_piece.rotated_right(), self.cur_x, self.cur_y)
 
         # Down
         elif keycode == ord(self.opts['keys']['down'].upper()):
@@ -372,7 +400,7 @@ class Board(wx.Panel):
         new_y = self.cur_y
 
         while new_y > 0:
-            if not self.try_move(self.cur_piece, self.cur_x, new_y - 1):
+            if not self.transform(self.cur_piece, self.cur_x, new_y - 1):
                 break
             new_y -= 1
 
@@ -382,7 +410,7 @@ class Board(wx.Panel):
         '''
         Move current piece down one row
         '''
-        if not self.try_move(self.cur_piece, self.cur_x, self.cur_y - 1):
+        if not self.transform(self.cur_piece, self.cur_x, self.cur_y - 1):
             self.piece_dropped()
 
     def piece_dropped(self):
@@ -446,12 +474,12 @@ class Board(wx.Panel):
         self.cur_y = self.height - 1 + self.cur_piece.min_y()
 
         # Test halting condition
-        if not self.try_move(self.cur_piece, self.cur_x, self.cur_y):
+        if not self.transform(self.cur_piece, self.cur_x, self.cur_y):
             self.timer.Stop()
             self.is_started = False
             self.update_status('over')
 
-    def try_move(self, new_piece, new_x, new_y):
+    def transform(self, new_piece, new_x, new_y):
         '''
         Attempt to transform (translate, rotate) current piece
         '''
