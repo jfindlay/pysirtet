@@ -1,61 +1,71 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+# Import python libs
 import os
 import re
+import sys
 import copy
+import enum
 import random
-import ConfigParser
+import configparser
 from argparse import ArgumentParser, ArgumentTypeError, ArgumentDefaultsHelpFormatter
+import tkinter as tk
 
-import wx
+
+class AngularDirection(enum.Enum):
+    cw = -1  # Clockwise
+    ccw = +1  # Counterclockwise
+
+
+class Extrema(enum.Enum):
+    min = -1
+    max = +1
 
 
 class Polyomino(object):
-    def __init__(self, name, colors, coords, origin=[0, 0]):
+    def __init__(self, name, colors, coords, origin=[0, 0], ordinal=4):
         self.name = name
         self.colors = colors
 
-        self.o = origin  # Origin of the polyomino's 'proper' reference frame
-        self.x = [c[0] for c in coords]
-        self.y = [c[1] for c in coords]
+        self.coords = coords  # Coordinates for each square in the polyomino
+        self.o = origin  # Origin of the polyomino's proper reference frame relative to constraint frame
+        self.ordinal = ordinal  # Polyomino ordinal (4 == tetromino, etc.)
 
     def _check_constraints(self, r, constraints):
         '''
         Validate whether the coordinates r = (x_i, y_i) are within the constraints
         '''
-        # check that r points to the interior of the grid
-        if r[0] < 0 or r[1] < 0:
-            return False
-        if r[0] > len(constraints) - 1:
-            return False
-        if r[1] > len(constraints[r[0]]) - 1:
+        # Check that r points to the interior of the grid
+        try:
+            constraints[r]
+        except IndexError:
             return False
         # Only the empty grid squares are allowed
-        if constraints[r[0]][r[1]] != '':
+        if constraints[r] != None:
             return False
 
         return True
 
     def rotate(self, direction, constraints):
         '''
-        Rotate polyomino clockwise (cw) or counterclockwise (ccw) about its
+        Rotate polyomino clockwise or counterclockwise (±π/2) about its
         proper origin if the resulting transformation is contained within the
         constraints
         '''
         # Prepare new coordinates and rotation tensor
-        x = [] ; y = []
-        sgn = +1 if direction == 'cw' else -1  # ccw
+        coords = self.ordinal*[[]]
+        sgn = direction.value  # +1 for ccw and -1 for cw
 
         # Apply rotation tensor if allowed
         for i, c in enumerate(self.x):
-            x[i] = -sgn*(self.y[i] - self.o[1]) + self.o[0]
-            y[i] = sgn*(self.x[i] - self.o[0]) + self.o[1]
-            if not self._check_constraints(x[i], y[i], constraints):
+            coords[i][0] = -sgn*(self.coords[i][1] - self.o[1]) + self.o[0]
+            coords[i][1] = sgn*(self.coords[i][0] - self.o[0]) + self.o[1]
+            if not self._check_constraints(coords[i], constraints):
                 return False
 
         # Set new coordinates
-        self.x = x ; self.y = y
+        self.coords = coords
         return True
 
     def translate(self, v, constraints):
@@ -63,75 +73,88 @@ class Polyomino(object):
         Translate polyomino by the vector v if the resulting transformation is
         contained within the constraints
         '''
-        # Redefine v as explicit coordinates in the board reference frame
-        if v[0] == 'min':
-            v = [-min(self.x), 0]
-        elif v[0] == 'max':
-            v = [len(constraints) - max(self.x), 0]
+        # Redefine v as explicit coordinates in the constraint reference frame
+        if v[0] == Extrema.min:
+            v = [-min(self.coords[0]), 0]
+        elif v[0] == Extrema.max:
+            v = [len(constraints) - max(self.coords[0]), 0]
 
-        # Prepare new coordinates and new proper origin
-        x = [] ; y = []
+        # Prepare new coordinates and new proper origin in the constraint frame
+        coords = self.ordinal*[[0, 0]]
         o = [self.o[0] + v[0], self.o[1] + v[1]]
 
         # Apply translation vector v if allowed
-        for i, c in enumerate(self.x):
-            x[i] = self.x[i] + v[0]
-            y[i] = self.y[i] + v[1]
-            if not self._check_constraints(x[i], y[i], constraints):
+        print(self._check_constraints([9,21], constraints))
+        for i, c in enumerate(self.coords):
+            coords[i][0] = self.coords[i][0] + v[0]
+            coords[i][1] = self.coords[i][1] + v[1]
+            if not self._check_constraints(coords[i], constraints):
+                print('checking {}'.format(coords[i]))
+                print(False)
                 return False
 
         # Set new coordinates and proper origin at translated position
-        self.x = x ; self.y = y
+        self.coords = coords
         self.o = o
         return True
 
 
-tetrominoes = (
+class Tetrominoes(enum.Enum):
+    Z = 1
+    S = 2
+    l = 3
+    T = 4
+    o = 5
+    L = 6
+    J = 7
+
+
+tetromino_data = (
     Polyomino(
-        name='Z',
-        coords=[[0, -1], [0, 0], [-1, 0], [-1, 1]],
+        name=Tetrominoes.Z,
+        coords=[[-1, 1], [0, 1], [0, 0], [1, 0]],
         colors={'normal': '#CC6666',
                 'light' : '#F89FAB',
                 'dark'  : '#803C3B'}
     ),
     Polyomino(
-        name='S',
-        coords=[[0, -1], [0, 0], [1, 0], [1, 1]],
+        name=Tetrominoes.S,
+        coords=[[-1, 0], [0, 0], [0, 1], [1, 1]],
         colors={'normal': '#66CC66',
                 'light' : '#79FC79',
                 'dark'  : '#3B803B'}
     ),
     Polyomino(
-        name='l',
-        coords=[[0, -1], [0, 0], [0, 1], [0, 2]],
+        name=Tetrominoes.l,
+        coords=[[-1, 0], [0, 0], [1, 0], [2, 0]],
         colors={'normal': '#6666CC',
                 'light' : '#7979FC',
                 'dark'  : '#3B3B80'}
     ),
     Polyomino(
-        name='T',
-        coords=[[-1, 0], [0, 0], [1, 0], [0, 1]],
+        name=Tetrominoes.T,
+        coords=[[-1, 1], [0, 1], [0, 0], [1, 1]],
         colors={'normal': '#CCCC66',
                 'light' : '#FCFC79',
                 'dark'  : '#80803B'}
     ),
     Polyomino(
-        name='o',
-        coords=[[0, 0], [1, 0], [0, 1], [1, 1]],
+        name=Tetrominoes.o,
+        coords=[[0, 1], [0, 0], [1, 0], [1, 1]],
         colors={'normal': '#CC66CC',
                 'light' : '#FC79FC',
                 'dark'  : '#803B80'}
     ),
     Polyomino(
-        name='L',
-        coords=[[-1, -1], [0, -1], [0, 0], [0, 1]],
+        name=Tetrominoes.L,
+        coords=[[1, 2], [1, 1], [1, 0], [1, 0]],
         colors={'normal': '#66CCCC',
                 'light' : '#79FCFC',
                 'dark'  : '#3B8080'}
     ),
     Polyomino(
-        name='J',
-        coords=[[1, -1], [0, -1], [0, 0], [0, 1]],
+        name=Tetrominoes.J,
+        coords=[[1, 2], [1, 1], [1, 0], [0, 0]],
         colors={'normal': '#DAAA00',
                 'light' : '#FCC600',
                 'dark'  : '#806200'}
@@ -139,403 +162,148 @@ tetrominoes = (
 )
 
 
-class PySirtet(wx.Frame):
+class Grid(object):
     '''
-    Main game window
+    The rectangular region of squares that comprises the game state.  The
+    squares map to the integer coordinates in the first quadrant of the
+    cartesian plane such that each square is represented by the (integral)
+    point at its upper right corner.  The origin corresponds to the upper right
+    corner of the grid
     '''
     def __init__(self, opts):
         '''
+        Setup game grid
+        '''
+        # Store program options
+        self.opts = opts
+
+        # Initialize internal grid
+        self._grid = [[None for i in range(self.opts['size']['width'])] for j in range(self.opts['size']['height'])]
+
+    def __getitem__(self, v):
+        '''
+        Retrieve the square at coordinates v from the origin
+        '''
+        return self._grid[v[0]][v[1]]
+
+    def __setitem__(self, v, t):
+        '''
+        Update the square at coordinates v from the origin to be of tetromino type t
+        '''
+        self._grid[v[0]][v[1]] = t
+
+    def update(self, tetromino_type, coords):
+        '''
+        Set the tetromino type at coords
+        '''
+        for square in coords:
+            self[square] = tetromino_type
+
+    def print(self):
+        '''
+        Display grid state
+        '''
+        for column in self._grid:
+            print('|' + ''.join(' ' if e is None else e.name for e in column) + '|')
+
+
+class PySirtet(tk.Frame):
+    '''
+    Main game window
+    '''
+    def __init__(self, opts, master=None):
+        '''
         Setup game window
         '''
-        # Create frame
-        wx.Frame.__init__(self,
-                          parent=None,
-                          title='PySirtet',
-                          size=(opts['geometry']['width'], opts['geometry']['height']))
-
         # Store program options
         self.opts = opts
 
-        # Setup additional features and attributes of the game window
-        self.status_bar = self.CreateStatusBar()
+        # Setup grid
+        self.grid = Grid(self.opts)
+        self.add_tetromino()
 
-        # Setup game panel
-        self.game = Game(self, opts)
+        # Setup TK
+        self.master = master
+        super().__init__(master)
+        self.pack()
+        self.create_widgets()
+        self.master.after(self._get_loop_wait(), self.iterate)
 
-        # Display window
-        self.Centre()
-        self.Show(True)
-
-
-class Game(wx.Panel):
-    '''
-    Wrapper panel around the board panel so that the board's aspect ratio is
-    preserved on window resize.
-    '''
-    def __init__(self, parent, opts):
-        wx.Panel.__init__(self, parent)
-
-        # Store program options
-        self.opts = opts
-
-        # Setup board
-        self.board = Board(self, opts)
-        self.board.SetFocus()
-        self.board.start()
-
-        # Setup size
-        sizer = wx.BoxSizer(wx.VERTICAL)
-        sizer.Add(self.board, 1, flag=wx.ALIGN_CENTER_HORIZONTAL|wx.SHAPED)
-        self.SetSizer(sizer)
-
-
-class Board(wx.Panel):
-    '''
-    Game board
-    '''
-    ID_TIMER = 1
-
-    def __init__(self, parent, opts):
+    def _get_loop_wait(self):
         '''
-        Setup board
+        Wait between game ticks [milliseconds]
         '''
-        # Create panel
-        wx.Panel.__init__(self,
-                          parent,
-                          size=(opts['size']['width'], opts['size']['height']))
+        epsilon = sys.float_info.epsilon*4
+        return round(1e3/(self.opts['speed'] if self.opts['speed'] > epsilon else epsilon))
 
-        # Store program options
-        self.opts = opts
-
-        # Setup additional features and attributes of the game board
-        self.width = opts['size']['width']
-        self.height = opts['size']['height']
-        self.speed = opts['speed'] or 700
-        self.SetBackgroundColour(wx.BLACK)
-
-        self.timer = wx.Timer(self, Board.ID_TIMER)
-        self.cur_piece = self.random_piece()
-        self.new_piece = self.random_piece()
-        self.cur_x = 0
-        self.cur_y = 0
-
-        self.score = 0
-        self.rows_removed = 0
-        self.clear_board()
-        self.update_status()
-
-        # Setup states
-        self.is_started = False
-        self.is_paused = False
-
-        # Setup bindings
-        self.Bind(wx.EVT_PAINT, self.OnPaint)
-        self.Bind(wx.EVT_KEY_DOWN, self.OnKeyDown)
-        self.Bind(wx.EVT_TIMER, self.OnTimer, id=Board.ID_TIMER)
-
-    def random_piece(self):
+    def iterate(self):
         '''
-        Randomly choose a polyomino
+        Main loop of the game window
         '''
-        return random.choice(tetrominoes)
+        print('game loop')
+        self.master.after(self._get_loop_wait(), self.iterate)
 
-    def get_piece(self, name):
+    def create_widgets(self):
         '''
-        Return the piece corresponding to the given name
+        Pack in game widgets
         '''
-        for tetromino in tetrominoes:
-            if tetromino.name == name:
-                return tetromino
+        self.board = tk.Canvas(self,
+                               width=self.opts['geometry']['width'],
+                               height=self.opts['geometry']['height'])
+        self.board.create_rectangle(0, 0,
+                                    self.opts['geometry']['width'], self.opts['geometry']['height'],
+                                    fill='black', width=0)
+        self.board.pack(side="top")
 
-    def clear_board(self):
+    def add_tetromino(self):
         '''
-        Setup and clear the board
+        Add a tetromino to the top center of the board
         '''
-        self.grid = [['' for i in range(self.height)] for j in range(self.width)]
+        # Get new piece
+        new_name = random.choice(tuple(Tetrominoes))
+        self.piece = copy.deepcopy([td for td in tetromino_data if td.name == new_name][0])
+        # Translate piece to top center of board
+        print(self.piece.coords)
+        self.piece.translate([self.opts['size']['width']//2, self.opts['size']['height'] - 1 - max([c[1] for c in self.piece.coords])], self.grid)
+        print(self.piece.coords)
+        self.grid.update(self.piece.name, self.piece.coords)
+        self.grid.print()
+        exit()
 
-    def update_status(self, state=''):
-        '''
-        Set status bar state
-        '''
-        # Get status bar
-        status_bar = self.GetParent().GetParent().status_bar
 
-        # Status text
-        status = ['Score: {}'.format(self.score),
-                  'Rows Removed: {}'.format(self.rows_removed)]
-        if state == 'paused':
-            status.append('(Paused)')
-        elif state == 'over':
-            status.append('(Game Over)')
-
-        # Set status
-        status_bar.SetStatusText(' | '.join(status))
-
-    def square_size(self):
-        '''
-        Return the size of a grid square
-        '''
-        width = self.GetClientSize().GetWidth()/self.width
-        height = self.GetClientSize().GetHeight()/self.height
-
-        return (width, height)
-
-    def start(self):
-        '''
-        Start game
-        '''
-        if self.is_paused:
-            return
-
-        self.is_started = True
-        self.score = 0
-        self.rows_removed = 0
-        self.clear_board()
-        self.update_status()
-
-        self.next_piece()
-        self.timer.Start(self.speed)
-
-    def pause(self):
-        '''
-        Pause game
-        '''
-        if not self.is_started:
-            return
-
-        self.is_paused = not self.is_paused
-
-        if self.is_paused:
-            self.timer.Stop()
-            self.update_status('paused')
-        else:
-            self.timer.Start(self.speed)
-            self.update_status()
-
-        self.Refresh()
-
-    def OnPaint(self, event):
-        '''
-        Paint event
-        '''
-        dc = wx.PaintDC(self)
-
-        size = self.GetClientSize()
-        square_width, square_height = self.square_size()
-        board_top = size.GetHeight() - self.height*square_height
-
-        for i in range(self.height):
-            for j in range(self.width):
-                piece_name = self.grid[j][self.height - i - 1]
-                if piece_name != '':
-                    self.draw_square(dc,
-                        j*square_width,
-                        board_top + i*square_height, self.get_piece(piece_name))
-
-        if self.cur_piece.name != '':
-            for i in range(4):
-                x = self.cur_x + self.cur_piece.x(i)
-                y = self.cur_y - self.cur_piece.y(i)
-                self.draw_square(dc, x*square_width,
-                    board_top + (self.height - y - 1)*square_height,
-                    self.cur_piece)
-
-    def OnKeyDown(self, event):
-        '''
-        Key input event
-        '''
-        # Skip if not started or no piece
-        if not self.is_started or self.cur_piece.name == '':
-            event.Skip()
-            return
-
-        keycode = event.GetKeyCode()
-
-        # Pause
-        if keycode == ord(self.opts['keys']['pause'].upper()):
-            self.pause()
-            return
-        if self.is_paused:
-            return
-
-        # Left
-        elif keycode == ord(self.opts['keys']['left_wall'].upper()):
-            self.transform(self.cur_piece, self.cur_x - 1, self.cur_y)
-        elif keycode == ord(self.opts['keys']['left'].upper()):
-            self.transform(self.cur_piece, self.cur_x - 1, self.cur_y)
-
-        # Right
-        elif keycode == ord(self.opts['keys']['right'].upper()):
-            self.transform(self.cur_piece, self.cur_x + 1, self.cur_y)
-        elif keycode == ord(self.opts['keys']['right_wall'].upper()):
-            self.transform(self.cur_piece, self.cur_x + 1, self.cur_y)
-
-        # Rotate
-        elif keycode == ord(self.opts['keys']['rotate_left'].upper()):
-            self.transform(self.cur_piece.rotated_left(), self.cur_x, self.cur_y)
-        elif keycode == ord(self.opts['keys']['rotate_right'].upper()):
-            self.transform(self.cur_piece.rotated_right(), self.cur_x, self.cur_y)
-
-        # Down
-        elif keycode == ord(self.opts['keys']['down'].upper()):
-            self.one_row_down()
-        elif keycode == ord(self.opts['keys']['drop'].upper()):
-            self.drop_down()
-        else:
-            event.Skip()
-
-    def OnTimer(self, event):
-        '''
-        Timer step event
-        '''
-        if event.GetId() == Board.ID_TIMER:
-            self.one_row_down()
-        else:
-            event.Skip()
-
-    def drop_down(self):
-        '''
-        Move current piece as far down as possible and introduce next piece
-        '''
-        new_y = self.cur_y
-
-        while new_y > 0:
-            if not self.transform(self.cur_piece, self.cur_x, new_y - 1):
-                break
-            new_y -= 1
-
-        self.piece_dropped()
-
-    def one_row_down(self):
-        '''
-        Move current piece down one row
-        '''
-        if not self.transform(self.cur_piece, self.cur_x, self.cur_y - 1):
-            self.piece_dropped()
-
-    def piece_dropped(self):
-        '''
-        Introduce new piece at the top of the board
-        '''
-        for i in range(4):
-            x = self.cur_x + self.cur_piece.x(i)
-            y = self.cur_y - self.cur_piece.y(i)
-            self.grid[x][y] = self.cur_piece.name
-
-        self.remove_full_rows()
-
-        self.next_piece()
-
-    def remove_full_rows(self):
-        '''
-        Remove a full row from the board
-        '''
-        # Collect full rows
-        full_rows = []
-        for i in range(self.height):
-            n = sum([1 for j in range(self.width) if self.grid[j][i] != ''])
-            if n == self.width:
-                full_rows.append(i)
-        full_rows.reverse()
-
-        # Remove full rows and move all above rows down
-        for m in full_rows:
-            for l in range(self.width):
-                # All rows but top
-                for k in range(m, self.height - 1):
-                    self.grid[l][k] = self.grid[l][k + 1]
-                # Top row
-                self.grid[l][self.height - 1] = ''
-
-        # Update game state
-        if len(full_rows):
-            self.update_score(len(full_rows))
-            self.update_status()
-            self.Refresh()
-
-    def update_score(self, num_full_rows):
-        '''
-        Update game score.  The score increases by a triangular sum of the
-        number of rows removed to incentivize removing more at once.
-        '''
-        self.score += sum([i for i in range(1, num_full_rows + 1)])  # TODO: factor in game level
-        self.rows_removed += num_full_rows
-
-    def next_piece(self):
-        '''
-        Setup next piece
-        '''
-        # Cycle pieces
-        self.cur_piece = self.new_piece
-        self.new_piece = self.random_piece()
-
-        # Update grid cursor
-        self.cur_x = self.width/2 + 1
-        self.cur_y = self.height - 1 + self.cur_piece.min_y()
-
-        # Test halting condition
-        if not self.transform(self.cur_piece, self.cur_x, self.cur_y):
-            self.timer.Stop()
-            self.is_started = False
-            self.update_status('over')
-
-    def transform(self, new_piece, new_x, new_y):
-        '''
-        Attempt to transform (translate, rotate) current piece
-        '''
-        for i in range(4):
-
-            x = new_x + new_piece.x(i)
-            y = new_y - new_piece.y(i)
-
-            if x < 0 or x >= self.width or y < 0 or y >= self.height:
-                return False
-            if self.grid[x][y] != '':
-                return False
-
-        self.cur_piece = new_piece
-        self.cur_x = new_x
-        self.cur_y = new_y
-        self.Refresh()
-
-        return True
-
-    def draw_square(self, dc, x, y, piece):
-        '''
-        Draw a square on the board
-        '''
-        # Get square size
-        square_width, square_height = self.square_size()
-
-        # Draw light edges
-        pen = wx.Pen(piece.colors['light'])
-        pen.SetCap(wx.CAP_PROJECTING)
-        dc.SetPen(pen)
-
-        dc.DrawLine(x, y + square_height - 1, x, y)
-        dc.DrawLine(x, y, x + square_width - 1, y)
-
-        # Draw dark edges
-        darkpen = wx.Pen(piece.colors['dark'])
-        darkpen.SetCap(wx.CAP_PROJECTING)
-        dc.SetPen(darkpen)
-
-        dc.DrawLine(x + 1, y + square_height - 1,
-            x + square_width - 1, y + square_height - 1)
-        dc.DrawLine(x + square_width - 1,
-            y + square_height - 1, x + square_width - 1, y + 1)
-
-        # Paint square surface
-        dc.SetPen(wx.TRANSPARENT_PEN)
-        dc.SetBrush(wx.Brush(piece.colors['normal']))
-        dc.DrawRectangle(x + 1, y + 1, square_width - 2,
-            square_height - 2)
+class Game(object):
+    pass
 
 
 def get_opts():
     '''
     Setup program options
     '''
+    defaults = {
+        'config_file': os.path.join(os.environ.get('HOME', ''), '.config/pysirtet/pysirtet.conf'),
+        'size': {'width': 10, 'height': 22},  # [blocks]
+        'geometry_scale': 16,  # [pixels^2/blocks] Used to scale geometry size to the board size
+        'geometry': '',  # The default geometry is set after the size is known
+        'speed': 1,  # [blocks/second]
+        'keys': {
+            'pause': 'p',
+            'left': ',',
+            'right': '.',
+            'left_wall': 'z',
+            'right_wall': '/',
+            'rotate_left': 'x',
+            'rotate_right': 'c',
+            'down': 'm',
+            'drop': 'v',
+        }
+    }
+    def default_geometry(size):
+        '''
+        Calculate the default geometry from the size
+        '''
+        return {'height': defaults['geometry_scale']*size['height'],
+                'width': defaults['geometry_scale']*size['width']}
+
     def config_file(arg):
         '''
         Create the file if it does not exist and return the path
@@ -604,37 +372,12 @@ def get_opts():
             geometry[token] = value if value is not None else '+'
         return geometry
 
-    defaults = {
-        'config_file': os.path.join(os.environ.get('HOME', ''), '.config/pysirtet/pysirtet.conf'),
-        'size': {'width': 10, 'height': 22},
-        'geometry_scale': 32,  # Used to scale geometry size to the board size
-        'geometry': '',  # The default geometry is set after the size is known
-        'speed': 0,
-        'keys': {
-            'pause': 'p',
-            'left': ',',
-            'right': '.',
-            'left_wall': 'z',
-            'right_wall': '/',
-            'rotate_left': 'x',
-            'rotate_right': 'c',
-            'down': 'm',
-            'drop': 'v',
-        }
-    }
-    def default_geometry(size):
-        '''
-        Calculate the default geometry from the size
-        '''
-        return {'height': defaults['geometry_scale']*size['height'],
-                'width': defaults['geometry_scale']*size['width']}
-
     def get_config(config_file):
         '''
         Read configs from config file
         '''
         opts = {}
-        config = ConfigParser.SafeConfigParser()
+        config = configparser.SafeConfigParser()
         config.read(config_file)
 
         # Window configs
@@ -661,31 +404,37 @@ def get_opts():
 
         return opts
 
-    desc='Polyomino tessellation game written in wxPython'
-    arg_parser = ArgumentParser(description=desc,
-                                formatter_class=ArgumentDefaultsHelpFormatter)
-    arg_parser.add_argument('-c', '--config-file',
-                            default=defaults['config_file'],
-                            type=config_file,
-                            help='Specify location of the config file')
-    arg_parser.add_argument('-s', '--size',
-                            default='{0[width]}x{0[height]}'.format(defaults['size']),
-                            type=size,
-                            help='Board size')
-    arg_parser.add_argument('-g', '--geometry',
-                            default='{0[width]}x{0[height]}'.format(default_geometry(defaults['size'])),
-                            dest='geometry',
-                            type=geometry,
-                            help='Specify window geometry; see X(7) for info on'
-                                 ' how to specify geometries')
-    arg_parser.add_argument('-S', '--speed',
-                            default=defaults['speed'],
-                            type=int,
-                            help='Game speed; if set, the game will run'
-                                 ' constantly at this speed regardless of the'
-                                 ' number of removed rows')
+    def get_args():
+        '''
+        Read configs from command line
+        '''
+        desc='Polyomino tessellation game written in tkinter'
+        arg_parser = ArgumentParser(description=desc,
+                                    formatter_class=ArgumentDefaultsHelpFormatter)
+        arg_parser.add_argument('-c', '--config-file',
+                                default=defaults['config_file'],
+                                type=config_file,
+                                help='Specify location of the config file')
+        arg_parser.add_argument('-s', '--size',
+                                default='{0[width]}x{0[height]}'.format(defaults['size']),
+                                type=size,
+                                help='Board size')
+        arg_parser.add_argument('-g', '--geometry',
+                                default='{0[width]}x{0[height]}'.format(default_geometry(defaults['size'])),
+                                dest='geometry',
+                                type=geometry,
+                                help='Specify window geometry; see X(7) for info on'
+                                     ' how to specify geometries')
+        arg_parser.add_argument('-S', '--speed',
+                                default=defaults['speed'],
+                                type=float,
+                                help='Game speed [blocks/second]; if set, the game will run'
+                                     ' constantly at this speed regardless of the'
+                                     ' number of removed rows')
+        return vars(arg_parser.parse_args())
 
-    args = vars(arg_parser.parse_args())
+    # Load configs from command line
+    args = get_args()
 
     # Load configs from config file
     opts = get_config(args['config_file'])
@@ -693,7 +442,7 @@ def get_opts():
     # Default window size to a scale factor of the board size
     if args['size'] != defaults['size']:
         if (args['geometry']['width'] == default_geometry(defaults['size'])['width']
-            and args['geometry']['height'] == default_geometry(defaults['size'])['height']):
+        and args['geometry']['height'] == default_geometry(defaults['size'])['height']):
             args['geometry'].update(default_geometry(args['size']))
 
     # Override configs with values from command line
@@ -714,12 +463,9 @@ def pysirtet():
     Execute the game
     '''
     try:
-        app = wx.App()
-        PySirtet(get_opts())
-        app.MainLoop()
+        PySirtet(get_opts(), master=tk.Tk()).mainloop()
     except KeyboardInterrupt:
         exit(0)
 
 
-if __name__ == '__main__':
-    pysirtet()
+if __name__ == '__main__' : pysirtet()

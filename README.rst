@@ -1,5 +1,5 @@
 pysirtet
 ========
 
-A tetromino tessellation game written in wxPython.  Derived from
-http://zetcode.com/wxpython/thetetrisgame/.
+A tetromino tessellation game written in python+tkinter.  No dependencies
+beyond python 3 should be required.
