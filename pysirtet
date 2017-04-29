@@ -80,17 +80,14 @@ class Polyomino(object):
             v = [len(constraints) - max(self.coords[0]), 0]
 
         # Prepare new coordinates and new proper origin in the constraint frame
-        coords = self.ordinal*[[0, 0]]
+        coords = [[0, 0] for c in range(self.ordinal)]
         o = [self.o[0] + v[0], self.o[1] + v[1]]
 
         # Apply translation vector v if allowed
-        print(self._check_constraints([9,21], constraints))
         for i, c in enumerate(self.coords):
             coords[i][0] = self.coords[i][0] + v[0]
             coords[i][1] = self.coords[i][1] + v[1]
             if not self._check_constraints(coords[i], constraints):
-                print('checking {}'.format(coords[i]))
-                print(False)
                 return False
 
         # Set new coordinates and proper origin at translated position
@@ -126,7 +123,7 @@ tetromino_data = (
     ),
     Polyomino(
         name=Tetrominoes.l,
-        coords=[[-1, 0], [0, 0], [1, 0], [2, 0]],
+        coords=[[-2, 0], [-1, 0], [0, 0], [1, 0]],
         colors={'normal': '#6666CC',
                 'light' : '#7979FC',
                 'dark'  : '#3B3B80'}
@@ -140,21 +137,21 @@ tetromino_data = (
     ),
     Polyomino(
         name=Tetrominoes.o,
-        coords=[[0, 1], [0, 0], [1, 0], [1, 1]],
+        coords=[[-1, 1], [-1, 0], [0, 0], [0, 1]],
         colors={'normal': '#CC66CC',
                 'light' : '#FC79FC',
                 'dark'  : '#803B80'}
     ),
     Polyomino(
         name=Tetrominoes.L,
-        coords=[[1, 2], [1, 1], [1, 0], [1, 0]],
+        coords=[[0, 2], [0, 1], [0, 0], [1, 0]],
         colors={'normal': '#66CCCC',
                 'light' : '#79FCFC',
                 'dark'  : '#3B8080'}
     ),
     Polyomino(
         name=Tetrominoes.J,
-        coords=[[1, 2], [1, 1], [1, 0], [0, 0]],
+        coords=[[0, 2], [0, 1], [0, 0], [-1, 0]],
         colors={'normal': '#DAAA00',
                 'light' : '#FCC600',
                 'dark'  : '#806200'}
@@ -178,7 +175,7 @@ class Grid(object):
         self.opts = opts
 
         # Initialize internal grid
-        self._grid = [[None for i in range(self.opts['size']['width'])] for j in range(self.opts['size']['height'])]
+        self._grid = [[None for i in range(self.opts['size']['height'])] for j in range(self.opts['size']['width'])]
 
     def __getitem__(self, v):
         '''
@@ -190,21 +187,33 @@ class Grid(object):
         '''
         Update the square at coordinates v from the origin to be of tetromino type t
         '''
+        print(v)
         self._grid[v[0]][v[1]] = t
 
-    def update(self, tetromino_type, coords):
+    def update(self, coords, t):
         '''
-        Set the tetromino type at coords
+        Set the tetromino type at coords to be t
         '''
-        for square in coords:
-            self[square] = tetromino_type
+        for v in coords:
+            self[v] = t
 
     def print(self):
         '''
         Display grid state
         '''
-        for column in self._grid:
-            print('|' + ''.join(' ' if e is None else e.name for e in column) + '|')
+        # Convert columns to rows
+        rows = len(self._grid[0])*['']
+        for j, column in enumerate(self._grid):
+            for i, element in enumerate(self._grid[j]):
+                rows[i] += 2*(' ' if element is None else element.name)
+
+        # Print rows with formatting
+        digits = len(str(self.opts['size']['height']))
+        row_fmt = '{{:0{}}}'.format(digits)
+        print(digits*' ' + '+' + 2*len(self._grid)*'-' + '+')
+        for i, row in enumerate(reversed(rows)):
+            print(row_fmt.format(self.opts['size']['height'] - i - 1) + '|' + row + '|')
+        print(digits*' ' + '+' + 2*len(self._grid)*'-' + '+')
 
 
 class PySirtet(tk.Frame):
@@ -263,16 +272,11 @@ class PySirtet(tk.Frame):
         new_name = random.choice(tuple(Tetrominoes))
         self.piece = copy.deepcopy([td for td in tetromino_data if td.name == new_name][0])
         # Translate piece to top center of board
-        print(self.piece.coords)
         self.piece.translate([self.opts['size']['width']//2, self.opts['size']['height'] - 1 - max([c[1] for c in self.piece.coords])], self.grid)
         print(self.piece.coords)
-        self.grid.update(self.piece.name, self.piece.coords)
+        self.grid.update(self.piece.coords, self.piece.name)
         self.grid.print()
         exit()
-
-
-class Game(object):
-    pass
 
 
 def get_opts():
