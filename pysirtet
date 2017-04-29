@@ -7,20 +7,22 @@ import re
 import sys
 import copy
 import enum
+import time
 import random
 import configparser
 from argparse import ArgumentParser, ArgumentTypeError, ArgumentDefaultsHelpFormatter
 import tkinter as tk
 
 
-class AngularDirection(enum.Enum):
-    cw = -1  # Clockwise
-    ccw = +1  # Counterclockwise
-
-
-class Extrema(enum.Enum):
-    min = -1
-    max = +1
+class Transformation(enum.Enum):
+    cw = 0  # π/2 clockwise
+    ccw = 1  # π/2 counterclockwise
+    left = 2  # One column left
+    right = 3  # One column right
+    down = 4  # One row down
+    min = 5  # Left side
+    max = 6  # Right side
+    bottom = 7  # Bottom side
 
 
 class Polyomino(object):
@@ -74,9 +76,9 @@ class Polyomino(object):
         contained within the constraints
         '''
         # Redefine v as explicit coordinates in the constraint reference frame
-        if v[0] == Extrema.min:
+        if v[0] == Transformation.min:
             v = [-min(self.coords[0]), 0]
-        elif v[0] == Extrema.max:
+        elif v[0] == Transformation.max:
             v = [len(constraints) - max(self.coords[0]), 0]
 
         # Prepare new coordinates and new proper origin in the constraint frame
@@ -177,17 +179,25 @@ class Grid(object):
         # Initialize internal grid
         self._grid = [[None for i in range(self.opts['size']['height'])] for j in range(self.opts['size']['width'])]
 
+    def __check_nonnegative(self, v):
+        '''
+        Disallow negative coordinates
+        '''
+        if 0 > min(v):
+            raise IndexError('grid coordinates must be nonnegative')
+
     def __getitem__(self, v):
         '''
         Retrieve the square at coordinates v from the origin
         '''
+        self.__check_nonnegative(v)
         return self._grid[v[0]][v[1]]
 
     def __setitem__(self, v, t):
         '''
         Update the square at coordinates v from the origin to be of tetromino type t
         '''
-        print(v)
+        self.__check_nonnegative(v)
         self._grid[v[0]][v[1]] = t
 
     def update(self, coords, t):
@@ -227,16 +237,17 @@ class PySirtet(tk.Frame):
         # Store program options
         self.opts = opts
 
-        # Setup grid
+        # Setup game state
         self.grid = Grid(self.opts)
-        self.add_tetromino()
+        self.piece = None
 
         # Setup TK
         self.master = master
         super().__init__(master)
         self.pack()
         self.create_widgets()
-        self.master.after(self._get_loop_wait(), self.iterate)
+        self.handle_events()
+        self.iterate()
 
     def _get_loop_wait(self):
         '''
@@ -245,12 +256,67 @@ class PySirtet(tk.Frame):
         epsilon = sys.float_info.epsilon*4
         return round(1e3/(self.opts['speed'] if self.opts['speed'] > epsilon else epsilon))
 
+    def handle_events(self):
+        '''
+        Respond to inputs and other game conditions, such as adding the next
+        piece
+        '''
+        if self.piece == None:
+            self.add_tetromino()
+        self.master.after(0, self.handle_events)
+
     def iterate(self):
         '''
         Main loop of the game window
         '''
-        print('game loop')
+        if not self.move_piece(Transformation.down):  # Piece is stuck on the bottom
+            time.sleep(self.opts['stick_wait'])
+        self.grid.print()
         self.master.after(self._get_loop_wait(), self.iterate)
+
+    def add_tetromino(self):
+        '''
+        Add a tetromino to the top center of the board
+        '''
+        # Get new piece
+        new_name = random.choice(tuple(Tetrominoes))
+        self.piece = copy.deepcopy([td for td in tetromino_data if td.name == new_name][0])
+        # Translate piece to top center of board
+        self.piece.translate([self.opts['size']['width']//2, self.opts['size']['height'] - 1 - max([c[1] for c in self.piece.coords])], self.grid)
+        self.grid.update(self.piece.coords, self.piece.name)
+
+    def move_piece(self, movement):
+        '''
+        Move current piece according to the movement requested:
+
+        - (down) One row down
+        - (left) One column left
+        - (right) One column right
+        - (bottom) To the lowest available position
+        - (min) To the leftmost available position
+        - (max) To the rightmost available position
+        - (cw) Rotate π/2 clockwise about piece proper origin
+        - (ccw) Rotate π/2 counterclockwise about piece proper origin
+        '''
+        # Map each movement to a predefined transformation on the current piece
+        # (some movements need no parameters and are thus a passthrough to the
+        # corresponding tetromino transformation)
+        action = {
+            Transformation.cw: (self.piece.rotate, movement),
+            Transformation.ccw: (self.piece.rotate, movement),
+            Transformation.left: (self.piece.translate, [-1, 0]),
+            Transformation.right: (self.piece.translate, [1, 0]),
+            Transformation.down: (self.piece.translate, [0, -1]),
+            Transformation.min: (self.piece.translate, movement),
+            Transformation.max: (self.piece.translate, movement),
+            Transformation.bottom: (self.piece.translate, movement),
+        }.get(movement)
+        # Execute the transformation on the current piece in the grid if it is
+        # allowed
+        self.grid.update(self.piece.coords, None)  # Clear piece from previous location
+        result = action[0](action[1], self.grid)
+        self.grid.update(self.piece.coords, self.piece.name)  # Replace piece at new/same location
+        return result
 
     def create_widgets(self):
         '''
@@ -264,20 +330,6 @@ class PySirtet(tk.Frame):
                                     fill='black', width=0)
         self.board.pack(side="top")
 
-    def add_tetromino(self):
-        '''
-        Add a tetromino to the top center of the board
-        '''
-        # Get new piece
-        new_name = random.choice(tuple(Tetrominoes))
-        self.piece = copy.deepcopy([td for td in tetromino_data if td.name == new_name][0])
-        # Translate piece to top center of board
-        self.piece.translate([self.opts['size']['width']//2, self.opts['size']['height'] - 1 - max([c[1] for c in self.piece.coords])], self.grid)
-        print(self.piece.coords)
-        self.grid.update(self.piece.coords, self.piece.name)
-        self.grid.print()
-        exit()
-
 
 def get_opts():
     '''
@@ -289,12 +341,13 @@ def get_opts():
         'geometry_scale': 16,  # [pixels^2/blocks] Used to scale geometry size to the board size
         'geometry': '',  # The default geometry is set after the size is known
         'speed': 1,  # [blocks/second]
+        'stick_wait': 1,  # [seconds] Wait time from when a piece bottoms out and a new piece is introduced
         'keys': {
             'pause': 'p',
             'left': ',',
             'right': '.',
-            'left_wall': 'z',
-            'right_wall': '/',
+            'left_side': 'z',
+            'right_side': '/',
             'rotate_left': 'x',
             'rotate_right': 'c',
             'down': 'm',
@@ -395,8 +448,10 @@ def get_opts():
         # Game configs
         if config.has_section('game'):
             opts['speed'] = config.get('game', 'speed', vars=defaults)
+            opts['stick_wait'] = config.get('game', 'stick_wait', vars=defaults)
         else:
             opts['speed'] = defaults['speed']
+            opts['stick_wait'] = defaults['stick_wait']
 
         # Keys configs
         if config.has_section('keys'):
