@@ -25,25 +25,34 @@ class Transformation(enum.Enum):
     bottom = 7  # Bottom side
 
 
-class Polyomino(object):
+class Polyomino:
+    '''
+    Define a polyomino by coordinates to the upper right corner of each of its
+    squares and provide the valid transformations for a polyomino on the
+    $\mathbb Z^2$ lattice
+    '''
     def __init__(self, name, colors, coords, origin=[0, 0], ordinal=4):
+        '''
+        Setup attributes and coordinates
+        '''
         self.name = name
         self.colors = colors
+        self.ordinal = ordinal  # Polyomino ordinal (4 == tetromino, etc.)
 
         self.coords = coords  # Coordinates for each square in the polyomino
         self.o = origin  # Origin of the polyomino's proper reference frame relative to constraint frame
-        self.ordinal = ordinal  # Polyomino ordinal (4 == tetromino, etc.)
 
     def _check_constraints(self, r, constraints):
         '''
-        Validate whether the coordinates r = (x_i, y_i) are within the constraints
+        Validate whether the coordinates r = (x, y), which correspond to the
+        upper right corner of a polyomino square are allowed by the constraints
         '''
         # Check that r points to the interior of the grid
         try:
             constraints[r]
         except IndexError:
             return False
-        # Only the empty grid squares are allowed
+        # Only unoccupied grid squares are allowed
         if constraints[r] != None:
             return False
 
@@ -161,13 +170,13 @@ tetromino_data = (
 )
 
 
-class Grid(object):
+class Grid:
     '''
     The rectangular region of squares that comprises the game state.  The
     squares map to the integer coordinates in the first quadrant of the
     cartesian plane such that each square is represented by the (integral)
     point at its upper right corner.  The origin corresponds to the upper right
-    corner of the grid
+    corner of the lower left square of the grid
     '''
     def __init__(self, opts):
         '''
@@ -331,9 +340,10 @@ class PySirtet(tk.Frame):
         self.board.pack(side="top")
 
 
-def get_opts():
+def get_opts(test=False):
     '''
-    Setup program options
+    Setup program options.  When ``test == True``, command line arguments are
+    not processed
     '''
     defaults = {
         'config_file': os.path.join(os.environ.get('HOME', ''), '.config/pysirtet/pysirtet.conf'),
@@ -493,7 +503,7 @@ def get_opts():
         return vars(arg_parser.parse_args())
 
     # Load configs from command line
-    args = get_args()
+    args = defaults if test else get_args()
 
     # Load configs from config file
     opts = get_config(args['config_file'])

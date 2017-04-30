@@ -1,44 +1,45 @@
 # -*- coding: utf-8 -*-
 
+# Import python libs
+import random
 # Import pysirtet libs
-import pysirtet
+from pysirtet import Polyomino, Tetrominoes, Grid
+from pysirtet import get_opts
 
-class TestPolyomino(object):
+class TestPolyomino:
     '''
-    Test polyomino definitions and transformations
+    Test the Polyomino class
     '''
-    def setUp(self):
+    def test__check_constraints(self):
         '''
-        Define data common to all tests
+        Test the constraint checking function
         '''
-        self.grid_width = 10
-        self.grid_height = 22
-        self.constraints = [['' for j in range(self.grid_height)] for i in range(self.grid_width)]
-        self.polyomino = pysirtet.Polyomino(
-                             name='o',
-                             coords=[[0, 0], [1, 0], [0, 1], [1, 1]],
-                             colors={'normal': '#CC66CC',
-                                     'light' : '#FC79FC',
-                                     'dark'  : '#803B80'}
-                         )
+        opts = get_opts(test=True)
+        w = opts['size']['width'] = random.randint(5, 101)
+        h = opts['size']['height'] = random.randint(5, 101)
+        grid = Grid(opts)
 
-    def test_check_constraints(self):
-        '''
-        Test that constraints are met
-        '''
-        # Get function
-        check = self.polyomino._check_constraints
-        # Validate correct truth of all permutation classes of constraint (non)violation
-        self.assertTrue(check([0, 3], self.constraints))
-        self.assertTrue(check([5, 7], self.constraints))
-        self.assertTrue(check([self.grid_width - 1, self.grid_height - 1], self.constraints))
+        # Test that all interior points of an empty grid are valid
+        for x in range(w):
+            for y in range(h):
+                assert True == Polyomino._check_constraints(Polyomino, (x, y), grid)
 
-        self.assertFalse(check([-1, 2], self.constraints))
-        self.assertFalse(check([3, -5], self.constraints))
-        self.assertFalse(check([self.grid_width + 1, 7], self.constraints))
-        self.assertFalse(check([3, self.grid_height + 1], self.constraints))
+        # Test that interior points corresponding to occupied squares are invalid
+        for i in range(random.randint(min(w, h), w*h)):
+            grid[random.randint(0, w - 1), random.randint(0, h - 1)] = random.choice(tuple(Tetrominoes))
+        for x in range(w):
+            for y in range(h):
+                assert (False if grid[x, y] != None else True) == Polyomino._check_constraints(Polyomino, (x, y), grid)
 
-        for i, c in enumerate(self.constraints[0]):
-            self.constraints[0][i] = 'o'
-        print(len(self.constraints))
-        self.assertFalse(check([0, 5], self.constraints))
+        # Test that exterior points are invalid
+        x_out = [i for i in range(-h, -1)] + [i for i in range(w, w + h)]
+        y_out = [j for j in range(-w, -1)] + [j for j in range(h, h + w)]
+        for x in x_out:
+            for y in y_out:
+                assert False == Polyomino._check_constraints(Polyomino, (x, y), grid)
+        for x in range(w):
+            for y in y_out:
+                assert False == Polyomino._check_constraints(Polyomino, (x, y), grid)
+        for x in x_out:
+            for y in range(h):
+                assert False == Polyomino._check_constraints(Polyomino, (x, y), grid)
