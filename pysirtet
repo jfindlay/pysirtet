@@ -57,7 +57,7 @@ class Polyomino:
         except IndexError:
             return False
         # Only unoccupied grid squares are allowed
-        if grid[r] != None:
+        if grid[r]['type'] != None:
             return False
 
         return True
@@ -209,7 +209,7 @@ class Grid:
         self.opts = opts
 
         # Initialize internal grid
-        self._grid = [[None for i in range(self.opts['size']['height'])] for j in range(self.opts['size']['width'])]
+        self._grid = [[{'type': None, 'id': None} for i in range(self.opts['size']['height'])] for j in range(self.opts['size']['width'])]
         self.width = len(self._grid)
         self.height = len(self._grid[0])
 
@@ -224,24 +224,28 @@ class Grid:
 
     def __getitem__(self, v):
         '''
-        Retrieve the square at coordinates v from the origin
+        Retrieve the square details at coordinates v from the origin
         '''
         self.__check_nonnegative(v)
         return self._grid[v[0]][v[1]]
 
-    def __setitem__(self, v, t):
+    def __setitem__(self, v, d):
         '''
-        Update the square at coordinates v from the origin to be of tetromino type t
+        Update the square at coordinates v from the origin to be of tetromino
+        type t with Tkinter item id i, where d is a dictionary of the form
+        {'type': t, 'id': i)
         '''
         self.__check_nonnegative(v)
-        self._grid[v[0]][v[1]] = t
+        self._grid[v[0]][v[1]].update(d)
 
-    def update(self, coords, t):
+    def __iter__(self):
         '''
-        Set the tetromino type at coords to be t
+        Iterate over the grid squares, providing both the coordinates and the
+        square info
         '''
-        for v in coords:
-            self[v] = t
+        for x in range(self.width):
+            for y in range(self.height):
+                yield (x, y), self[x, y]
 
     def print(self):
         '''
@@ -251,7 +255,7 @@ class Grid:
         rows = len(self._grid[0])*['']
         for j, column in enumerate(self._grid):
             for i, element in enumerate(self._grid[j]):
-                rows[i] += 2*(' ' if element is None else element.name)
+                rows[i] += 2*(' ' if element['type'] is None else element['type'].name)
 
         # Print rows with formatting
         digits = len(str(self.opts['size']['height']))
@@ -270,8 +274,13 @@ class PySirtet(tk.Frame):
         '''
         Setup game window
         '''
-        # Store program options
+        # Setup options
         self.opts = opts
+        self.scale = self.opts['scale']
+        self.width = self.scale*self.opts['size']['width']
+        self.height = self.scale*self.opts['size']['height']
+        self.thickness = self.scale//13
+
 
         # Setup game state
         self.grid = Grid(self.opts)
@@ -289,7 +298,7 @@ class PySirtet(tk.Frame):
         '''
         Wait between game ticks [milliseconds]
         '''
-        epsilon = sys.float_info.epsilon*4
+        epsilon = sys.float_info.epsilon*3
         return round(1e3/(self.opts['speed'] if self.opts['speed'] > epsilon else epsilon))
 
     def handle_events(self):
@@ -298,28 +307,27 @@ class PySirtet(tk.Frame):
         piece
         '''
         if self.piece == None:
-            self.add_tetromino()
-        self.master.after(0, self.handle_events)
+            self.add_piece()
+        self.master.after(1, self.handle_events)
 
     def iterate(self):
         '''
-        Main loop of the game window
+        Move the active piece one row down
         '''
-        if not self.move_piece(Transformation.down):  # Piece is stuck on the bottom
+        if not self.move_piece(Transformation.down):  # Piece has reached the bottom
             time.sleep(self.opts['stick_wait'])
-        self.grid.print()
+            self.add_piece()
         self.master.after(self._get_loop_wait(), self.iterate)
 
-    def add_tetromino(self):
+    def add_piece(self):
         '''
-        Add a tetromino to the top center of the board
+        Add a tetromino to the top center of the grid
         '''
-        # Get new piece
         new_name = random.choice(tuple(TetrominoName))
         self.piece = copy.deepcopy([td for td in tetrominoes if td.name == new_name][0])
-        # Translate piece to top center of board
-        self.piece.translate([self.opts['size']['width']//2, self.opts['size']['height'] - 1 - max([c[1] for c in self.piece.coords])], self.grid)
-        self.grid.update(self.piece.coords, self.piece.name)
+        if not self.piece.translate([self.opts['size']['width']//2, self.opts['size']['height'] - 1 - max([c[1] for c in self.piece.coords])], self.grid):
+            pass  # Game Over
+        self._update_grid(self.piece)
 
     def move_piece(self, movement):
         '''
@@ -335,9 +343,7 @@ class PySirtet(tk.Frame):
         - (ccw) Rotate π/2 counterclockwise about piece proper origin
         '''
         # Map each movement to a predefined transformation on the current piece
-        # (some movements need no parameters and are thus a passthrough to the
-        # corresponding tetromino transformation)
-        action = {
+        transform, magnitude = {
             Transformation.cw: (self.piece.rotate, movement),
             Transformation.ccw: (self.piece.rotate, movement),
             Transformation.left: (self.piece.translate, [-1, 0]),
@@ -347,58 +353,106 @@ class PySirtet(tk.Frame):
             Transformation.max: (self.piece.translate, movement),
             Transformation.bottom: (self.piece.translate, movement),
         }.get(movement)
-        # Execute the transformation on the current piece in the grid if it is
-        # allowed
-        self.grid.update(self.piece.coords, None)  # Clear piece from previous location
-        result = action[0](action[1], self.grid)
-        self.grid.update(self.piece.coords, self.piece.name)  # Replace piece at new/same location
+        # Execute the transformation on the current piece if possible
+        self._update_grid(self.piece, clear=True)
+        result = transform(magnitude, self.grid)
+        self._update_grid(self.piece)  # (Re)place
         return result
+
+    def _update_grid(self, piece, clear=False):
+        '''
+        Place or clear piece on the grid
+        '''
+        for v in piece.coords:
+            square = self.grid[v]
+            if clear:
+                square.update({'type': None, 'id': self.board.delete(square['id'])})
+            else:
+                square.update({'type': piece.name, 'id': self._draw_square(v, piece.colors)})
+
+    def _transform_coord(self, v):
+        '''
+        pysirtet treats the game board as the first quadrant of the Cartesian
+        plane with the origin at the lower left corner, whereas Tkinter,
+        conventionally, places the origin in the upper left corner, with
+        positive x and y directions pointing right and down, respectively
+        '''
+        return [v[0], self.opts['size']['height'] - 1 - v[1]]
+
+    def _draw_square(self, v, colors):
+        '''
+        Draw or clear a polyomino square on the board at v
+        '''
+        u = self._transform_coord(v)
+        return self.board.create_rectangle(self.scale*u[0] + self.thickness,
+                                           self.scale*u[1] + self.thickness,
+                                           self.scale*(u[0] + 1),
+                                           self.scale*(u[1] + 1),
+                                           fill=colors['normal'],
+                                           outline=colors['dark'],
+                                           width=self.thickness)
+
+    def _draw_board(self):
+        '''
+        Draw the game board
+        '''
+        board = tk.Canvas(self, width=self.width, height=self.height)
+        board.create_rectangle(0, 0,
+                               self.width, self.height,
+                               fill='black',
+                               outline='black',
+                               width=self.thickness)
+
+        if self.opts['debug']:
+            for v, name in self.grid:
+                u = self._transform_coord(v)
+                board.create_text((self.scale*u[0], self.scale*u[1]),
+                                  text='{},{}'.format(*v),
+                                  fill='white', font=('Monospace', 5), anchor=tk.SW)
+
+        return board
 
     def create_widgets(self):
         '''
         Pack in game widgets
         '''
-        self.board = tk.Canvas(self,
-                               width=self.opts['geometry']['width'],
-                               height=self.opts['geometry']['height'])
-        self.board.create_rectangle(0, 0,
-                                    self.opts['geometry']['width'], self.opts['geometry']['height'],
-                                    fill='black', width=0)
+        self.board = self._draw_board()
         self.board.pack(side="top")
 
 
-def get_opts(test=False):
+class Config:
     '''
-    Setup program options.  When ``test == True``, command line arguments are
-    not processed
+    Provide and save game configuration
     '''
-    defaults = {
-        'config_file': os.path.join(os.environ.get('HOME', ''), '.config/pysirtet/pysirtet.conf'),
-        'size': {'width': 10, 'height': 22},  # [blocks]
-        'geometry_scale': 16,  # [pixels^2/blocks] Used to scale geometry size to the board size
-        'geometry': '',  # The default geometry is set after the size is known
-        'speed': 1,  # [blocks/second]
-        'stick_wait': 1,  # [seconds] Wait time from when a piece bottoms out and a new piece is introduced
-        'keys': {
-            'pause': 'p',
-            'left': ',',
-            'right': '.',
-            'left_side': 'z',
-            'right_side': '/',
-            'rotate_left': 'x',
-            'rotate_right': 'c',
-            'down': 'm',
-            'drop': 'v',
-        }
-    }
-    def default_geometry(size):
+    def __init__(self, test=False):
         '''
-        Calculate the default geometry from the size
+        Setup game configuration.  When ``test == True``, command line
+        arguments are not processed
         '''
-        return {'height': defaults['geometry_scale']*size['height'],
-                'width': defaults['geometry_scale']*size['width']}
+        self.test = test
 
-    def config_file(arg):
+        self.defaults = {
+            'config_file': os.path.join(os.environ.get('HOME', ''), '.config/pysirtet/pysirtet.conf'),
+            'debug': False,
+            'size': {'width': 10, 'height': 22},  # [blocks]
+            'scale': 32,  # [pixels/block] number of pixels per block side
+            'speed': 1,  # [blocks/second]
+            'constant': False,  # Do not increase game speed
+            'stick_wait': 1,  # [seconds] Wait time from when a piece bottoms out and a new piece is introduced
+            'keys': {
+                'pause': 'p',
+                'left': ',',
+                'right': '.',
+                'left_side': 'z',
+                'right_side': '/',
+                'rotate_left': 'x',
+                'rotate_right': 'c',
+                'down': 'm',
+                'drop': 'v',
+            }
+        }
+
+    def _config_file(self, arg):
         '''
         Create the file if it does not exist and return the path
         '''
@@ -409,7 +463,7 @@ def get_opts(test=False):
 
         return arg
 
-    def size(arg):
+    def _size(self, arg):
         '''
         Validate size argument
         '''
@@ -424,49 +478,13 @@ def get_opts(test=False):
             raise ArgumentTypeError('Incorrect size')
 
         # Construct return data and return
-        geometry = {}
+        grid_size = {}
         for token in ('width', 'height'):
             value = match.group(token)
-            geometry[token] = int(value) if value is not None else 0
-        return geometry
+            grid_size[token] = int(value) if value is not None else 0
+        return grid_size
 
-    def geometry(arg):
-        '''
-        Validate geometry argument
-        '''
-        # Match data
-        geom_pattern = (r'(?P<width>\d+)'       # width pixels
-                        r'(?P<mlt>[xX])'        # times
-                        r'(?P<height>\d+)'      # height pixels
-                        r'(?:'                  # optional non-capturing group for position
-                            r'(?P<xsgn>[+-])*'  # x sign
-                            r'(?P<xpos>\d+)*'   # x position
-                            r'(?P<ysgn>[+-])*'  # y sign
-                            r'(?P<ypos>\d+)*'   # y position
-                        r')*')                  # close optional group
-        match = re.match(geom_pattern, arg)
-
-        # Validate size
-        if not match:
-            raise ArgumentTypeError('Incorrect size')
-
-        # Validate position
-        extra = ('xsgn', 'xpos', 'ysgn', 'ypos')
-        found_extra = [match.group(token) for token in extra]
-        if any(found_extra) and not all(found_extra):
-            raise ArgumentTypeError('Incorrect position')
-
-        # Construct return data and return
-        geometry = {}
-        for token in ('width', 'height', 'xpos', 'ypos'):
-            value = match.group(token)
-            geometry[token] = int(value) if value is not None else 0
-        for token in ('xsgn', 'ysgn'):
-            value = match.group(token)
-            geometry[token] = value if value is not None else '+'
-        return geometry
-
-    def get_config(config_file):
+    def _get_config(self, config_file):
         '''
         Read configs from config file
         '''
@@ -475,83 +493,82 @@ def get_opts(test=False):
         config.read(config_file)
 
         # Window configs
-        if config.has_section('window'):
-            opts['size'] = config.get('window', 'size', vars=defaults)
-            opts['geometry'] = config.get('window', 'geometry', vars={'geometry': default_geometry(opts['size'])})
+        if config.has_section('grid'):
+            opts['size'] = config.get('grid', 'size', vars=self.defaults)
+            opts['scale'] = config.get('grid', 'scale', vars=self.defaults)
         else:
-            opts['size'] = defaults['size']
-            opts['geometry'] = default_geometry(defaults['size'])
+            opts['size'] = self.defaults['size']
+            opts['scale'] = self.defaults['scale']
 
         # Game configs
         if config.has_section('game'):
-            opts['speed'] = config.get('game', 'speed', vars=defaults)
-            opts['stick_wait'] = config.get('game', 'stick_wait', vars=defaults)
+            opts['debug'] = config.get('game', 'debug', vars=self.defaults)
+            opts['speed'] = config.get('game', 'speed', vars=self.defaults)
+            opts['constant'] = config.get('game', 'constant', vars=self.defaults)
+            opts['stick_wait'] = config.get('game', 'stick_wait', vars=self.defaults)
         else:
-            opts['speed'] = defaults['speed']
-            opts['stick_wait'] = defaults['stick_wait']
+            opts['speed'] = self.defaults['speed']
+            opts['constant'] = self.defaults['constant']
+            opts['stick_wait'] = self.defaults['stick_wait']
 
         # Keys configs
         if config.has_section('keys'):
             opts['keys'] = {}
             for key in opts['keys'].keys():
-                opts['keys'][key] = config.get('keys', key, vars=defaults['keys'])
+                opts['keys'][key] = config.get('keys', key, vars=self.defaults['keys'])
         else:
-            opts['keys'] = defaults['keys']
+            opts['keys'] = self.defaults['keys']
 
         return opts
 
-    def get_args():
+    def _get_args(self):
         '''
         Read configs from command line
         '''
-        desc='Polyomino tessellation game written in tkinter'
+        desc='Polyomino tessellation game written in Tkinter'
         arg_parser = ArgumentParser(description=desc,
                                     formatter_class=ArgumentDefaultsHelpFormatter)
         arg_parser.add_argument('-c', '--config-file',
-                                default=defaults['config_file'],
-                                type=config_file,
+                                default=self.defaults['config_file'],
+                                type=self._config_file,
                                 help='Specify location of the config file')
+        arg_parser.add_argument('-d', '--debug',
+                                default=self.defaults['debug'],
+                                action='store_true',
+                                help='Run game in debug mode')
         arg_parser.add_argument('-s', '--size',
-                                default='{0[width]}x{0[height]}'.format(defaults['size']),
-                                type=size,
-                                help='Board size')
-        arg_parser.add_argument('-g', '--geometry',
-                                default='{0[width]}x{0[height]}'.format(default_geometry(defaults['size'])),
-                                dest='geometry',
-                                type=geometry,
-                                help='Specify window geometry; see X(7) for info on'
-                                     ' how to specify geometries')
+                                default='{0[width]}x{0[height]}'.format(self.defaults['size']),
+                                type=self._size,
+                                help='Board size [blocks^2]')
+        arg_parser.add_argument('-a', '--scale',
+                                default=self.defaults['scale'],
+                                type=int,
+                                help='Board scale [pixels/block]')
         arg_parser.add_argument('-S', '--speed',
-                                default=defaults['speed'],
+                                default=self.defaults['speed'],
                                 type=float,
-                                help='Game speed [blocks/second]; if set, the game will run'
-                                     ' constantly at this speed regardless of the'
-                                     ' number of removed rows')
+                                help='Starting speed [blocks/second]')
+        arg_parser.add_argument('-o', '--constant',
+                                default=self.defaults['constant'],
+                                action='store_true',
+                                help='Do not increase game speed')
         return vars(arg_parser.parse_args())
 
-    # Load configs from command line
-    args = defaults if test else get_args()
+    def get_opts(self):
+        '''
+        Setup program options
+        '''
+        # Override configs with values from command line
+        args = self.defaults if self.test else self._get_args()
+        opts = self._get_config(args['config_file'])
+        opts.update(args)
+        return opts
 
-    # Load configs from config file
-    opts = get_config(args['config_file'])
-
-    # Default window size to a scale factor of the board size
-    if args['size'] != defaults['size']:
-        if (args['geometry']['width'] == default_geometry(defaults['size'])['width']
-        and args['geometry']['height'] == default_geometry(defaults['size'])['height']):
-            args['geometry'].update(default_geometry(args['size']))
-
-    # Override configs with values from command line
-    opts.update(args)
-
-    return opts
-
-
-def write_config(opts):
-    '''
-    Save game configs to file when config dialog is closed
-    '''
-    # TODO
+    def write_opts(self, opts):
+        '''
+        Save game configs to file when config dialog is closed
+        '''
+        # TODO
 
 
 def pysirtet():
@@ -559,7 +576,7 @@ def pysirtet():
     Execute the game
     '''
     try:
-        PySirtet(get_opts(), master=tk.Tk()).mainloop()
+        PySirtet(Config().get_opts(), master=tk.Tk()).mainloop()
     except KeyboardInterrupt:
         exit(0)
 

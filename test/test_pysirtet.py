@@ -7,7 +7,7 @@ from contextlib import contextmanager
 
 # Import pysirtet libs
 from pysirtet import Polyomino, TetrominoName, Grid, Transformation
-from pysirtet import tetrominoes, get_opts
+from pysirtet import tetrominoes, Config
 
 
 # https://stackoverflow.com/a/42327075
@@ -28,7 +28,7 @@ class TestPolyomino:
         '''
         Setup program options and grid state
         '''
-        self.opts = get_opts(test=True)
+        self.opts = Config(test=True).get_opts()
         self.grid = Grid(self.opts)
 
     def test__check_grid(self):
@@ -42,10 +42,10 @@ class TestPolyomino:
 
         # Test that interior squares that are occupied are invalid
         for i in range(random.randint(min(self.grid.width, self.grid.height), self.grid.width*self.grid.height)):
-            self.grid[random.randint(0, self.grid.width - 1), random.randint(0, self.grid.height - 1)] = random.choice(tuple(TetrominoName))
+            self.grid[random.randint(0, self.grid.width - 1), random.randint(0, self.grid.height - 1)]['type'] = random.choice(tuple(TetrominoName))
         for x in range(self.grid.width):
             for y in range(self.grid.height):
-                assert (False if self.grid[x, y] != None else True) == Polyomino._check_grid(Polyomino, (x, y), self.grid)
+                assert (False if self.grid[x, y]['type'] != None else True) == Polyomino._check_grid(Polyomino, (x, y), self.grid)
 
         # Test that exterior squares are invalid (pick an arbitrary covering, $(wh)^2$, of the grid)
         x_out = [i for i in range(-self.grid.height//2, -1)] + [i for i in range(self.grid.width, self.grid.width + self.grid.height//2)]
@@ -145,7 +145,7 @@ class TestGrid:
         '''
         Setup program options and create a test grid instance
         '''
-        self.opts = get_opts(test=True)
+        self.opts = Config(test=True).get_opts()
         self.grid = Grid(self.opts)
 
     def test_get(self):
@@ -156,7 +156,7 @@ class TestGrid:
         for i in range(self.grid.width):
             for j in range(self.grid.height):
                 with not_raises(IndexError) as e_info:
-                    assert self.grid[[i, j]] == None
+                    assert self.grid[[i, j]]['type'] == None
 
         # Test that exterior squares are invalid (pick an arbitrary covering, $(wh)^2$, of the grid)
         x_out = [i for i in range(-self.grid.height//2, -1)] + [i for i in range(self.grid.width, self.grid.width + self.grid.height//2)]
@@ -183,8 +183,8 @@ class TestGrid:
             for j in range(self.grid.height):
                 with not_raises(IndexError) as e_info:
                     tetromino_name = random.choice(tuple(TetrominoName))
-                    self.grid[[i, j]] = tetromino_name
-                    assert self.grid[[i, j]] == tetromino_name
+                    self.grid[[i, j]]['type'] = tetromino_name
+                    assert self.grid[[i, j]]['type'] == tetromino_name
 
         # Test that exterior squares are invalid (pick an arbitrary covering, $(wh)^2$, of the grid)
         x_out = [i for i in range(-self.grid.height//2, -1)] + [i for i in range(self.grid.width, self.grid.width + self.grid.height//2)]
@@ -201,18 +201,3 @@ class TestGrid:
             for y in range(self.grid.height):
                 with pytest.raises(IndexError) as e_info:
                     self.grid[[x, y]] = random.choice(tuple(TetrominoName))
-
-    def test_update(self):
-        '''
-        Test updating the grid
-        '''
-        # Setup some random data
-        coords = []
-        for i in range(random.randint(2, self.grid.width*self.grid.height)):
-            coords.append([random.randint(0, self.grid.width - 1), random.randint(0, self.grid.height - 1)])
-        tetromino_name = random.choice(tuple(TetrominoName))
-
-        # Test that the grid is updated as expected
-        self.grid.update(coords, tetromino_name)
-        for c in coords:
-            assert self.grid[c] == tetromino_name
