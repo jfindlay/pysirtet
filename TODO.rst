@@ -44,7 +44,6 @@ Features
 Packaging
 =========
 
-- depends on wxPython (should I alternatively or optionally use tkinter, etc.?)
 - pypi
 - ebuild
 - deb

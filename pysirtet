@@ -279,20 +279,21 @@ class PySirtet(tk.Frame):
         self.scale = self.opts['scale']
         self.width = self.scale*self.opts['size']['width']
         self.height = self.scale*self.opts['size']['height']
-        self.thickness = self.scale//13
-
+        self.thickness = self.scale//16
 
         # Setup game state
         self.grid = Grid(self.opts)
         self.piece = None
+        self.paused = None
 
         # Setup TK
         self.master = master
         super().__init__(master)
         self.pack()
+        self.setup_events()
         self.create_widgets()
-        self.handle_events()
-        self.iterate()
+        self.add_piece()
+        self.iterate_id = self.master.after(self._get_loop_wait(), self.iterate)
 
     def _get_loop_wait(self):
         '''
@@ -301,23 +302,52 @@ class PySirtet(tk.Frame):
         epsilon = sys.float_info.epsilon*3
         return round(1e3/(self.opts['speed'] if self.opts['speed'] > epsilon else epsilon))
 
-    def handle_events(self):
+    def setup_events(self):
         '''
-        Respond to inputs and other game conditions, such as adding the next
-        piece
+        Respond to inputs and other game conditions: mainly key input
         '''
-        if self.piece == None:
-            self.add_piece()
-        self.master.after(1, self.handle_events)
+        for name, key in self.opts['keys'].items():
+            self.master.bind(key, getattr(self, name))
+
+    def pause(self, event):
+        '''
+        (Un)pause the game
+        '''
+        if self.paused:
+            self.iterate_id = self.master.after(self._get_loop_wait(), self.iterate)
+            self.paused = False
+        else:
+            self.after_cancel(self.iterate_id)
+            self.paused = True
+
+    def move(transformation):
+        '''
+        Map keys to transformations on the current piece
+        '''
+        def transform(self, event):
+            '''
+            Transform the current piece
+            '''
+            self.move_piece(transformation)
+        return transform
+
+    left = move(Transformation.left)
+    right = move(Transformation.right)
+    left_side = move(Transformation.min)
+    right_side = move(Transformation.max)
+    rotate_left = move(Transformation.ccw)
+    rotate_right = move(Transformation.cw)
+    down = move(Transformation.down)
+    drop = move(Transformation.bottom)
 
     def iterate(self):
         '''
         Move the active piece one row down
         '''
-        if not self.move_piece(Transformation.down):  # Piece has reached the bottom
+        if not self.move_piece(Transformation.down):
             time.sleep(self.opts['stick_wait'])
             self.add_piece()
-        self.master.after(self._get_loop_wait(), self.iterate)
+        self.iterate_id = self.master.after(self._get_loop_wait(), self.iterate)
 
     def add_piece(self):
         '''
@@ -408,7 +438,7 @@ class PySirtet(tk.Frame):
                 u = self._transform_coord(v)
                 board.create_text((self.scale*u[0], self.scale*u[1]),
                                   text='{},{}'.format(*v),
-                                  fill='white', font=('Monospace', 5), anchor=tk.SW)
+                                  fill='white', font=('Monospace', 5), anchor=tk.NW)
 
         return board
 
