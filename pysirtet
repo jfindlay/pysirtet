@@ -5,6 +5,7 @@
 import os
 import re
 import sys
+import math
 import copy
 import enum
 import time
@@ -46,20 +47,20 @@ class Polyomino:
         self.ordinal = len(self.coords)  # Polyomino ordinal (4 == tetromino, etc.)
         self.o = origin  # Origin of the polyomino's proper reference frame relative to grid frame
 
-    def _check_grid(self, r, grid):
+    def _check_grid(self, coords, grid):
         '''
-        Validate whether the coordinates r = (x, y), which correspond to the
-        upper right corner of a polyomino square are allowed by the grid
+        Validate whether the coordinates, which correspond to the upper right
+        corner of a polyomino square are all available in the grid
         '''
-        # Check that r points to the interior of the grid
-        try:
-            grid[r]
-        except IndexError:
-            return False
-        # Only unoccupied grid squares are allowed
-        if grid[r]['type'] != None:
-            return False
-
+        for r in coords:
+            # Check that r points to the interior of the grid
+            try:
+                grid[r]
+            except IndexError:
+                return False
+            # Check that r points to an unoccupied square
+            if grid[r]['type'] != None:
+                return False
         return True
 
     def _min(self, dimension):
@@ -76,7 +77,7 @@ class Polyomino:
         '''
         return max([c[dimension] for c in self.coords])
 
-    def rotate(self, direction, grid):
+    def rotate(self, direction, grid, **kwargs):
         '''
         Rotate polyomino clockwise or counterclockwise (±π/2) about its
         proper origin if the resulting transformation is contained within the
@@ -89,45 +90,51 @@ class Polyomino:
             Transformation.ccw: 1,
         }.get(direction)
 
-        # Apply rotation tensor if allowed
+        # Apply rotation tensor if possible
         for i in range(self.ordinal):
             coords[i][0] = -sgn*(self.coords[i][1] - self.o[1]) + self.o[0]
             coords[i][1] = sgn*(self.coords[i][0] - self.o[0]) + self.o[1]
-            if not self._check_grid(coords[i], grid):
-                return False
+        if self._check_grid(coords, grid):
+            self.coords = coords
+            return True
+        return False
 
-        # Set new coordinates
-        self.coords = coords
-        return True
-
-    def translate(self, v, grid):
+    def translate(self, v, grid, incremental=False):
         '''
-        Translate polyomino by the vector v if the resulting transformation is
-        contained within the grid; the vector v is relative to the grid origin
+        Translate polyomino by the vector v if the resulting transformation
+        places the polyomino within the grid and on unoccupied squares
         '''
-        # Redefine v as explicit coordinates in the grid reference frame
+        # Redefine v as explicit coordinates in the grid reference frame and
+        # define eigenform of v
         if v == Transformation.min:
             v = [-self._min(0), 0]
         elif v == Transformation.max:
             v = [grid.width - self._max(0) - 1, 0]
         elif v == Transformation.bottom:
             v = [0, -self._min(1)]
+        magnitude = math.sqrt(v[0]**2 + v[1]**2) or 1  # Prevent zero division
+        eigen = [math.ceil(v[0]/magnitude), math.ceil(v[1]/magnitude)]
 
         # Prepare new coordinates and new proper origin in the grid frame
         coords = [[0, 0] for i in range(self.ordinal)]
-        o = [self.o[0] + v[0], self.o[1] + v[1]]
+        o = [0, 0]
 
-        # Apply translation vector v if allowed
-        for i in range(self.ordinal):
-            coords[i][0] = self.coords[i][0] + v[0]
-            coords[i][1] = self.coords[i][1] + v[1]
-            if not self._check_grid(coords[i], grid):
-                return False
-
-        # Set new coordinates and proper origin at translated position
-        self.coords = coords
-        self.o = o
-        return True
+        # Incrementally apply upto translation vector v
+        success = None
+        u = eigen if incremental else v
+        while True:
+            for i in range(self.ordinal):
+                coords[i][0] = self.coords[i][0] + u[0]
+                coords[i][1] = self.coords[i][1] + u[1]
+                o = [self.o[0] + u[0], self.o[1] + u[1]]
+            if self._check_grid(coords, grid):
+                self.coords = [[coord[0], coord[1]] for coord in coords]
+                self.o = [o[0], o[1]]
+                success = True
+                if not incremental:
+                    return success
+            else:
+                return success
 
 
 class TetrominoName(enum.Enum):
@@ -252,17 +259,20 @@ class Grid:
         Display grid state
         '''
         # Convert columns to rows
-        rows = len(self._grid[0])*['']
-        for j, column in enumerate(self._grid):
-            for i, element in enumerate(self._grid[j]):
-                rows[i] += 2*(' ' if element['type'] is None else element['type'].name)
+        rows = {}
+        for v, square in self:
+            if not v[1] in rows:
+                rows[v[1]] = {}
+            rows[v[1]][v[0]] = ' ' if square['type'] is None else square['type'].name
+        for i, row in enumerate(rows):
+            rows[i] = ''.join([2*rows[i][j] for j in sorted(rows[i].keys())])
 
         # Print rows with formatting
         digits = len(str(self.opts['size']['height']))
         row_fmt = '{{:0{}}}'.format(digits)
         print(digits*' ' + '+' + 2*len(self._grid)*'-' + '+')
-        for i, row in enumerate(reversed(rows)):
-            print(row_fmt.format(self.opts['size']['height'] - i - 1) + '|' + row + '|')
+        for i in reversed(list(rows.keys())):
+            print(row_fmt.format(self.opts['size']['height'] - i - 1) + '|' + rows[i] + '|')
         print(digits*' ' + '+' + 2*len(self._grid)*'-' + '+')
 
 
@@ -346,7 +356,10 @@ class PySirtet(tk.Frame):
         '''
         if not self.move_piece(Transformation.down):
             time.sleep(self.opts['stick_wait'])
+            self.remove_rows()
             self.add_piece()
+        if self.opts['debug']:
+            self.grid.print()
         self.iterate_id = self.master.after(self._get_loop_wait(), self.iterate)
 
     def add_piece(self):
@@ -373,21 +386,26 @@ class PySirtet(tk.Frame):
         - (ccw) Rotate π/2 counterclockwise about piece proper origin
         '''
         # Map each movement to a predefined transformation on the current piece
-        transform, magnitude = {
-            Transformation.cw: (self.piece.rotate, movement),
-            Transformation.ccw: (self.piece.rotate, movement),
-            Transformation.left: (self.piece.translate, [-1, 0]),
-            Transformation.right: (self.piece.translate, [1, 0]),
-            Transformation.down: (self.piece.translate, [0, -1]),
-            Transformation.min: (self.piece.translate, movement),
-            Transformation.max: (self.piece.translate, movement),
-            Transformation.bottom: (self.piece.translate, movement),
+        transform, magnitude, kwargs = {
+            Transformation.cw: (self.piece.rotate, movement, {}),
+            Transformation.ccw: (self.piece.rotate, movement, {}),
+            Transformation.left: (self.piece.translate, [-1, 0], {}),
+            Transformation.right: (self.piece.translate, [1, 0], {}),
+            Transformation.down: (self.piece.translate, [0, -1], {}),
+            Transformation.min: (self.piece.translate, movement, {'incremental': True}),
+            Transformation.max: (self.piece.translate, movement, {'incremental': True}),
+            Transformation.bottom: (self.piece.translate, movement, {'incremental': True}),
         }.get(movement)
         # Execute the transformation on the current piece if possible
         self._update_grid(self.piece, clear=True)
-        result = transform(magnitude, self.grid)
+        result = transform(magnitude, self.grid, **kwargs)
         self._update_grid(self.piece)  # (Re)place
         return result
+
+    def remove_rows(self):
+        '''
+        Remove any full rows
+        '''
 
     def _update_grid(self, piece, clear=False):
         '''
@@ -434,7 +452,7 @@ class PySirtet(tk.Frame):
                                width=self.thickness)
 
         if self.opts['debug']:
-            for v, name in self.grid:
+            for v, square in self.grid:
                 u = self._transform_coord(v)
                 board.create_text((self.scale*u[0], self.scale*u[1]),
                                   text='{},{}'.format(*v),
@@ -475,10 +493,10 @@ class Config:
                 'right': '.',
                 'left_side': 'z',
                 'right_side': '/',
-                'rotate_left': 'x',
-                'rotate_right': 'c',
-                'down': 'm',
-                'drop': 'v',
+                'rotate_left': 'v',
+                'rotate_right': 'm',
+                'down': 'x',
+                'drop': 'c',
             }
         }
 

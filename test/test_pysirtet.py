@@ -36,29 +36,27 @@ class TestPolyomino:
         Test the constraint checking function
         '''
         # Test that all interior squares of an empty grid are valid
-        for x in range(self.grid.width):
-            for y in range(self.grid.height):
-                assert True == Polyomino._check_grid(Polyomino, (x, y), self.grid)
+        for v, square in self.grid:
+            assert True == Polyomino._check_grid(Polyomino, [v], self.grid)
 
         # Test that interior squares that are occupied are invalid
         for i in range(random.randint(min(self.grid.width, self.grid.height), self.grid.width*self.grid.height)):
             self.grid[random.randint(0, self.grid.width - 1), random.randint(0, self.grid.height - 1)]['type'] = random.choice(tuple(TetrominoName))
-        for x in range(self.grid.width):
-            for y in range(self.grid.height):
-                assert (False if self.grid[x, y]['type'] != None else True) == Polyomino._check_grid(Polyomino, (x, y), self.grid)
+        for v, square in self.grid:
+            assert (True if self.grid[v]['type'] == None else False) == Polyomino._check_grid(Polyomino, [v], self.grid)
 
         # Test that exterior squares are invalid (pick an arbitrary covering, $(wh)^2$, of the grid)
         x_out = [i for i in range(-self.grid.height//2, -1)] + [i for i in range(self.grid.width, self.grid.width + self.grid.height//2)]
         y_out = [j for j in range(-self.grid.width//2, -1)] + [j for j in range(self.grid.height, self.grid.height + self.grid.width//2)]
         for x in x_out:
             for y in y_out:
-                assert False == Polyomino._check_grid(Polyomino, (x, y), self.grid)
+                assert False == Polyomino._check_grid(Polyomino, [(x, y)], self.grid)
         for x in range(self.grid.width):
             for y in y_out:
-                assert False == Polyomino._check_grid(Polyomino, (x, y), self.grid)
+                assert False == Polyomino._check_grid(Polyomino, [(x, y)], self.grid)
         for x in x_out:
             for y in range(self.grid.height):
-                assert False == Polyomino._check_grid(Polyomino, (x, y), self.grid)
+                assert False == Polyomino._check_grid(Polyomino, [(x, y)], self.grid)
 
     def test__min(self):
         '''
@@ -153,10 +151,9 @@ class TestGrid:
         Test getting squares in the grid
         '''
         # Test that interior squares are valid
-        for i in range(self.grid.width):
-            for j in range(self.grid.height):
-                with not_raises(IndexError) as e_info:
-                    assert self.grid[[i, j]]['type'] == None
+        for v, square in self.grid:
+            with not_raises(IndexError) as e_info:
+                assert square['type'] == None
 
         # Test that exterior squares are invalid (pick an arbitrary covering, $(wh)^2$, of the grid)
         x_out = [i for i in range(-self.grid.height//2, -1)] + [i for i in range(self.grid.width, self.grid.width + self.grid.height//2)]
