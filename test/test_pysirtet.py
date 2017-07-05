@@ -6,7 +6,7 @@ import pytest
 from contextlib import contextmanager
 
 # Import pysirtet libs
-from pysirtet import Polyomino, TetrominoName, Grid, Transformation
+from pysirtet import Polyomino, Grid, Transformation
 from pysirtet import tetrominoes, Config
 
 
@@ -41,7 +41,7 @@ class TestPolyomino:
 
         # Test that interior squares that are occupied are invalid
         for i in range(random.randint(min(self.grid.width, self.grid.height), self.grid.width*self.grid.height)):
-            self.grid[random.randint(0, self.grid.width - 1), random.randint(0, self.grid.height - 1)]['type'] = random.choice(tuple(TetrominoName))
+            self.grid[random.randint(0, self.grid.width - 1), random.randint(0, self.grid.height - 1)]['type'] = random.choice(tetrominoes).name
         for v, square in self.grid:
             assert (True if self.grid[v]['type'] == None else False) == Polyomino._check_grid(Polyomino, [v], self.grid)
 
@@ -179,7 +179,7 @@ class TestGrid:
         for i in range(self.grid.width):
             for j in range(self.grid.height):
                 with not_raises(IndexError) as e_info:
-                    tetromino_name = random.choice(tuple(TetrominoName))
+                    tetromino_name = random.choice(tetrominoes).name
                     self.grid[[i, j]]['type'] = tetromino_name
                     assert self.grid[[i, j]]['type'] == tetromino_name
 
@@ -189,12 +189,12 @@ class TestGrid:
         for x in x_out:
             for y in y_out:
                 with pytest.raises(IndexError) as e_info:
-                    self.grid[[x, y]] = random.choice(tuple(TetrominoName))
+                    self.grid[[x, y]] = random.choice(tetrominoes).name
         for x in range(self.grid.width):
             for y in y_out:
                 with pytest.raises(IndexError) as e_info:
-                    self.grid[[x, y]] = random.choice(tuple(TetrominoName))
+                    self.grid[[x, y]] = random.choice(tetrominoes).name
         for x in x_out:
             for y in range(self.grid.height):
                 with pytest.raises(IndexError) as e_info:
-                    self.grid[[x, y]] = random.choice(tuple(TetrominoName))
+                    self.grid[[x, y]] = random.choice(tetrominoes).name
