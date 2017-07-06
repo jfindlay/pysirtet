@@ -6,8 +6,8 @@ import pytest
 from contextlib import contextmanager
 
 # Import pysirtet libs
-from pysirtet import Polyomino, Grid, Transformation
-from pysirtet import tetrominoes, Config
+from pysirtet import Polyomino, Grid, Transformation, Config
+from pysirtet import tetrominoes
 
 
 # https://stackoverflow.com/a/42327075
