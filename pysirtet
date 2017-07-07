@@ -48,8 +48,8 @@ class Polyomino:
         # polyomino center of mass, coordinates can take integral and
         # half-integral values
         if any([v[0]%1 or v[1]%1 for v in coords]):
-            self.coords = [[int(v[0] + D('0.5')), int(v[1] + D('0.5'))] for v in coords]
-            self.o = [D('0.5'), D('0.5')]
+            self.coords = [[int(v[0] + D('-0.5')), int(v[1] + D('-0.5'))] for v in coords]
+            self.o = [D('-0.5'), D('-0.5')]
         else:
             self.coords = coords
             self.o = [0, 0]
@@ -307,6 +307,7 @@ class PySirtet(tk.Frame):
         # Setup game state
         self.state_name = tk.StringVar()
         self._set_state(GameState.running)
+        self.level = tk.IntVar(value=1)
         self.grid = Grid(self.opts)
         self.piece = None
         self.removed = {l + 1: 0 for l in range(4)}
@@ -321,6 +322,14 @@ class PySirtet(tk.Frame):
         self.add_piece()
         self.iterate_id = self.master.after(self._get_loop_wait(), self.iterate)
 
+    def _get_loop_wait(self):
+        '''
+        Wait between game ticks [milliseconds]
+        '''
+        epsilon = sys.float_info.epsilon*3
+        level_speed = self.opts['speed']*(math.log(self.level.get(), 2) + 1)
+        return round(1e3/(level_speed if level_speed > epsilon else epsilon))
+
     def _set_state(self, state):
         '''
         Set the game state
@@ -332,19 +341,19 @@ class PySirtet(tk.Frame):
             GameState.over: 'Game Over',
         }.get(state))
 
-    def _get_loop_wait(self):
-        '''
-        Wait between game ticks [milliseconds]
-        '''
-        epsilon = sys.float_info.epsilon*3
-        return round(1e3/(self.opts['speed'] if self.opts['speed'] > epsilon else epsilon))
-
     def _update_score(self, rows_removed):
         '''
         Update the score
         '''
         self.removed[rows_removed] += 1
         self.score.set(self.score.get() + self.points[rows_removed])
+
+    def _update_level(self):
+        '''
+        Update the game level
+        '''
+        if not self.opts['constant'] and sum([n*r for n, r in self.removed.items()]) > round(self.opts['level_multiplier']*(math.log(self.level.get(), 2) + 1)):
+            self.level.set(self.level.get() + 1)
 
     def _update_board(self, piece, clear=False):
         '''
@@ -413,10 +422,17 @@ class PySirtet(tk.Frame):
 
         self.marquee = tk.Frame(self)
         self.marquee.pack(side='right', padx=self.scale, pady=self.scale)
+
+        self.level_board = tk.LabelFrame(self.marquee, text='level')
+        self.level_board.pack(side='top')
+        self.level_total = tk.Label(self.level_board, textvariable=self.level, width=4)
+        self.level_total.pack(side='top')
+
         self.score_board = tk.LabelFrame(self.marquee, text='score')
         self.score_board.pack(side='top')
         self.score_total = tk.Label(self.score_board, textvariable=self.score, width=4)
         self.score_total.pack(side='top')
+
         self.state_label = tk.Label(self.marquee, textvariable=self.state_name)
         self.state_label.pack(side='top')
 
@@ -539,7 +555,6 @@ class PySirtet(tk.Frame):
 
         # Remove full rows and move partial rows down into the vacancies
         if full_count:
-            self._update_score(full_count)
             for row in rows:
                 if row.full:
                     self._update_board(row, clear=True)
@@ -547,6 +562,8 @@ class PySirtet(tk.Frame):
                     self._update_board(row, clear=True)
                     row.translate([0, -row.full_below], self.grid)
                     self._update_board(row)
+            self._update_score(full_count)
+            self._update_level()
 
 
 class Config:
@@ -565,7 +582,8 @@ class Config:
             'debug': False,
             'size': {'width': 10, 'height': 22},  # [blocks]
             'scale': 32,  # [pixels/block] number of pixels per block side
-            'speed': 1,  # [blocks/second]
+            'speed': 1,  # [blocks/second] Initial speed: increases by log_2 of the previous level
+            'level_multiplier': 16,  # [rows/level] Initial number of rows cleared for level advancement: increases by log_2 of the previous level
             'constant': False,  # Do not increase game speed
             'stick_fraction': 1/4,  # Fraction of the game speed to wait when a piece bottoms out and a new piece is introduced
             'keys': {
@@ -633,10 +651,13 @@ class Config:
         if config.has_section('game'):
             opts['debug'] = config.get('game', 'debug', vars=self.defaults)
             opts['speed'] = config.get('game', 'speed', vars=self.defaults)
+            opts['level_multiplier'] = config.get('game', 'level_multiplier', vars=self.defaults)
             opts['constant'] = config.get('game', 'constant', vars=self.defaults)
             opts['stick_fraction'] = config.get('game', 'stick_fraction', vars=self.defaults)
         else:
+            opts['debug'] = self.defaults['debug']
             opts['speed'] = self.defaults['speed']
+            opts['level_multiplier'] = self.defaults['level_multiplier']
             opts['constant'] = self.defaults['constant']
             opts['stick_fraction'] = self.defaults['stick_fraction']
 
@@ -676,7 +697,7 @@ class Config:
         arg_parser.add_argument('-S', '--speed',
                                 default=self.defaults['speed'],
                                 type=float,
-                                help='Starting speed [blocks/second]')
+                                help='Initial speed [blocks/second]')
         arg_parser.add_argument('-o', '--constant',
                                 default=self.defaults['constant'],
                                 action='store_true',

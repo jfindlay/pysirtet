@@ -1,18 +1,14 @@
 Features
 ========
 
-- Add levels
-- Add skills (easy, medium, hard)
-- Configurable board size
 - Configurably allow monomino, domino, trominoes(, pentominoes, ...?)
-- Fullscreen mode?
 - AI
-- Multiplayer mode
 
 - UI
 
   * Preview next piece
   * Rows removed
+  * Scale game size to screen size
 
 - Config
 
