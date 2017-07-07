@@ -60,14 +60,14 @@ class Polyomino:
         Validate whether the coordinates, which correspond to the upper right
         corner of a polyomino square are all available in the grid
         '''
-        for r in coords:
-            # Check that r points to the interior of the grid
+        for v in coords:
+            # Check that v points to the interior of the grid
             try:
-                grid[r]
+                grid[v]
             except IndexError:
                 return False
-            # Check that r points to an unoccupied square
-            if grid[r]['type'] != None:
+            # Check that v points to an unoccupied square
+            if grid[v]['type'] != None:
                 return False
         return True
 
@@ -87,9 +87,9 @@ class Polyomino:
 
     def rotate(self, direction, grid, **kwargs):
         '''
-        Rotate polyomino clockwise or counterclockwise (±π/2) about its
-        proper origin if the resulting transformation is contained within the
-        grid
+        Rotate polyomino clockwise or counterclockwise (±π/2) about its proper
+        origin if the resulting transformation is contained within the grid and
+        places the polyomino on unoccupied squares
         '''
         # Prepare new coordinates and rotation tensor
         coords = [[0, 0] for i in range(self.ordinal)]
@@ -115,16 +115,19 @@ class Polyomino:
         :param incremental: If true, move the polyomino one row/column at a
         time in the direction of v
         '''
-        # Redefine v as explicit coordinates in the grid reference frame and
-        # define eigenform of v
-        if v == Transformation.min:
-            v = [-self.min(0), 0]
-        elif v == Transformation.max:
-            v = [grid.width - self.max(0) - 1, 0]
-        elif v == Transformation.bottom:
-            v = [0, -self.min(1)]
+        # Redefine v as explicit coordinates in the grid reference frame
+        if isinstance(v, Transformation):
+            v = {
+                Transformation.left: [-1, 0],
+                Transformation.right: [1, 0],
+                Transformation.down: [0, -1],
+                Transformation.min: [-self.min(0), 0],
+                Transformation.max: [grid.width - self.max(0) - 1, 0],
+                Transformation.bottom: [0, -self.min(1)],
+            }.get(v)
+        # define unit form of v
         magnitude = D(math.sqrt(v[0]**2 + v[1]**2)) or 1  # Prevent zero division
-        eigen = [math.ceil(v[0]/magnitude), math.ceil(v[1]/magnitude)]
+        unit = [math.ceil(v[0]/magnitude), math.ceil(v[1]/magnitude)]
 
         # Prepare new coordinates and new proper origin in the grid frame
         coords = [[0, 0] for i in range(self.ordinal)]
@@ -132,9 +135,9 @@ class Polyomino:
 
         # Incrementally apply upto translation vector v
         success = None
-        u = eigen if incremental else v
+        u = unit if incremental else v
         if u == [0, 0]:
-            success = False ; return success
+            return success
         while True:
             for i in range(self.ordinal):
                 coords[i][0] = self.coords[i][0] + u[0]
@@ -279,6 +282,12 @@ class Grid:
         print(digits*' ' + '+' + 2*len(self._grid)*'-' + '+')
 
 
+class GameState(enum.Enum):
+    running = 0
+    paused = 1
+    over = 2
+
+
 class PySirtet(tk.Frame):
     '''
     Main game window
@@ -296,21 +305,32 @@ class PySirtet(tk.Frame):
         self.points = {l + 1: (l + 1)*4 for l in range(4)}
 
         # Setup game state
+        self.state_name = tk.StringVar()
+        self._set_state(GameState.running)
         self.grid = Grid(self.opts)
         self.piece = None
-        self.paused = False
         self.removed = {l + 1: 0 for l in range(4)}
         self.score = tk.IntVar()
 
         # Setup TK
-        self.text = 'pysirtet'
-        self.master = master
         super().__init__(master)
+        self.master = master
         self.pack()
         self.create_widgets()
         self.setup_events()
         self.add_piece()
         self.iterate_id = self.master.after(self._get_loop_wait(), self.iterate)
+
+    def _set_state(self, state):
+        '''
+        Set the game state
+        '''
+        self.state = state
+        self.state_name.set({
+            GameState.running: '',
+            GameState.paused: 'Paused',
+            GameState.over: 'Game Over',
+        }.get(state))
 
     def _get_loop_wait(self):
         '''
@@ -393,10 +413,12 @@ class PySirtet(tk.Frame):
 
         self.marquee = tk.Frame(self)
         self.marquee.pack(side='right', padx=self.scale, pady=self.scale)
-        self.score_label = tk.LabelFrame(self.marquee, text='score', width=self.scale*4)
-        self.score_label.pack(side='bottom')
-        self.score_board = tk.Label(self.score_label, textvariable=self.score, width=4)
-        self.score_board.pack(side='bottom')
+        self.score_board = tk.LabelFrame(self.marquee, text='score')
+        self.score_board.pack(side='top')
+        self.score_total = tk.Label(self.score_board, textvariable=self.score, width=4)
+        self.score_total.pack(side='top')
+        self.state_label = tk.Label(self.marquee, textvariable=self.state_name)
+        self.state_label.pack(side='top')
 
     def setup_events(self):
         '''
@@ -409,12 +431,12 @@ class PySirtet(tk.Frame):
         '''
         (Un)pause the game
         '''
-        if self.paused:
-            self.iterate_id = self.master.after(self._get_loop_wait(), self.iterate)
-            self.paused = False
-        else:
+        if self.state == GameState.running:
             self.after_cancel(self.iterate_id)
-            self.paused = True
+            self._set_state(GameState.paused)
+        elif self.state == GameState.paused:
+            self.iterate_id = self.master.after(self._get_loop_wait(), self.iterate)
+            self._set_state(GameState.running)
 
     def move(transformation):
         '''
@@ -424,7 +446,8 @@ class PySirtet(tk.Frame):
             '''
             Transform the current piece
             '''
-            self.move_piece(transformation)
+            if self.state == GameState.running:
+                self.move_piece(transformation)
         return transform
 
     left = move(Transformation.left)
@@ -446,7 +469,8 @@ class PySirtet(tk.Frame):
             self.add_piece()
         if self.opts['debug']:
             self.grid.print()
-        self.iterate_id = self.master.after(self._get_loop_wait(), self.iterate)
+        if self.state != GameState.over:
+            self.iterate_id = self.master.after(self._get_loop_wait(), self.iterate)
 
     def add_piece(self):
         '''
@@ -454,9 +478,10 @@ class PySirtet(tk.Frame):
         '''
         name = random.choice(tetrominoes).name
         self.piece = copy.deepcopy([t for t in tetrominoes if t.name == name][0])
-        if not self.piece.translate([self.opts['size']['width']//2, self.opts['size']['height'] - 1 - self.piece.max(1)], self.grid):
-            pass  # Game Over
-        self._update_board(self.piece)
+        if self.piece.translate([self.opts['size']['width']//2, self.opts['size']['height'] - 1 - self.piece.max(1)], self.grid):
+            self._update_board(self.piece)
+        else:
+            self._set_state(GameState.over)
 
     def move_piece(self, movement):
         '''
@@ -472,19 +497,19 @@ class PySirtet(tk.Frame):
         - (ccw) Rotate π/2 counterclockwise about piece proper origin
         '''
         # Map each movement to a predefined transformation on the current piece
-        transform, magnitude, kwargs = {
-            Transformation.cw: (self.piece.rotate, movement, {}),
-            Transformation.ccw: (self.piece.rotate, movement, {}),
-            Transformation.left: (self.piece.translate, [-1, 0], {}),
-            Transformation.right: (self.piece.translate, [1, 0], {}),
-            Transformation.down: (self.piece.translate, [0, -1], {}),
-            Transformation.min: (self.piece.translate, movement, {'incremental': True}),
-            Transformation.max: (self.piece.translate, movement, {'incremental': True}),
-            Transformation.bottom: (self.piece.translate, movement, {'incremental': True}),
+        transform, kwargs = {
+            Transformation.cw: (self.piece.rotate, {}),
+            Transformation.ccw: (self.piece.rotate, {}),
+            Transformation.left: (self.piece.translate, {}),
+            Transformation.right: (self.piece.translate, {}),
+            Transformation.down: (self.piece.translate, {}),
+            Transformation.min: (self.piece.translate, {'incremental': True}),
+            Transformation.max: (self.piece.translate, {'incremental': True}),
+            Transformation.bottom: (self.piece.translate, {'incremental': True}),
         }.get(movement)
         # Execute the transformation on the current piece if possible
         self._update_board(self.piece, clear=True)
-        result = transform(magnitude, self.grid, **kwargs)
+        result = transform(movement, self.grid, **kwargs)
         self._update_board(self.piece)  # (Re)place
         return result
 
@@ -680,7 +705,7 @@ def pysirtet():
     Execute the game
     '''
     try:
-        PySirtet(Config().get_opts(), master=tk.Tk()).mainloop()
+        PySirtet(Config().get_opts(), master=tk.Tk(className='pysirtet')).mainloop()
     except KeyboardInterrupt:
         exit(0)
 

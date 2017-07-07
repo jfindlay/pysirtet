@@ -13,7 +13,6 @@ Features
 
   * Preview next piece
   * Rows removed
-  * Game over
 
 - Config
 
@@ -21,7 +20,6 @@ Features
 
 - Scoring
 
-  * Implement ksirtet's scoring formulas
   * Save high score list to a file
   * highlight top ten or top score in the status bar like ksirtet
 
