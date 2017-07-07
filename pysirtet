@@ -11,6 +11,7 @@ import enum
 import time
 import random
 import configparser
+from decimal import Decimal as D
 from argparse import ArgumentParser, ArgumentTypeError, ArgumentDefaultsHelpFormatter
 import tkinter as tk
 
@@ -36,16 +37,23 @@ class Polyomino:
     squares and provide the valid transformations for a polyomino on the
     $\mathbb Z^2$ lattice
     '''
-    def __init__(self, name, colors, coords, origin=[0, 0]):
+    def __init__(self, name, colors, coords):
         '''
         Setup attributes and coordinates
         '''
         self.name = name
         self.colors = colors
 
-        self.coords = coords  # Coordinates for each square in the polyomino
-        self.ordinal = len(self.coords)  # Polyomino ordinal (4 == tetromino, etc.)
-        self.o = origin  # Origin of the polyomino's proper reference frame relative to grid frame
+        # To minimize the distance between the polyomino proper origin and the
+        # polyomino center of mass, coordinates can take integral and
+        # half-integral values
+        if any([v[0]%1 or v[1]%1 for v in coords]):
+            self.coords = [[int(v[0] + D('0.5')), int(v[1] + D('0.5'))] for v in coords]
+            self.o = [D('0.5'), D('0.5')]
+        else:
+            self.coords = coords
+            self.o = [0, 0]
+        self.ordinal = len(coords)  # Polyomino ordinal (4 == tetromino, etc.)
 
     def _check_grid(self, coords, grid):
         '''
@@ -63,14 +71,14 @@ class Polyomino:
                 return False
         return True
 
-    def _min(self, dimension):
+    def min(self, dimension):
         '''
         Return the minimum coordinate of the polyomino in the given dimension
         ('x' corresponds to 0 and 'y' to 1)
         '''
         return min([c[dimension] for c in self.coords])
 
-    def _max(self, dimension):
+    def max(self, dimension):
         '''
         Return the maximum coordinate of the polyomino in the given dimension
         ('x' corresponds to 0 and 'y' to 1)
@@ -92,8 +100,8 @@ class Polyomino:
 
         # Apply rotation tensor if possible
         for i in range(self.ordinal):
-            coords[i][0] = -sgn*(self.coords[i][1] - self.o[1]) + self.o[0]
-            coords[i][1] = sgn*(self.coords[i][0] - self.o[0]) + self.o[1]
+            coords[i][0] = int(-sgn*(self.coords[i][1] - self.o[1]) + self.o[0])
+            coords[i][1] = int(sgn*(self.coords[i][0] - self.o[0]) + self.o[1])
         if self._check_grid(coords, grid):
             self.coords = coords
             return True
@@ -110,12 +118,12 @@ class Polyomino:
         # Redefine v as explicit coordinates in the grid reference frame and
         # define eigenform of v
         if v == Transformation.min:
-            v = [-self._min(0), 0]
+            v = [-self.min(0), 0]
         elif v == Transformation.max:
-            v = [grid.width - self._max(0) - 1, 0]
+            v = [grid.width - self.max(0) - 1, 0]
         elif v == Transformation.bottom:
-            v = [0, -self._min(1)]
-        magnitude = math.sqrt(v[0]**2 + v[1]**2) or 1  # Prevent zero division
+            v = [0, -self.min(1)]
+        magnitude = D(math.sqrt(v[0]**2 + v[1]**2)) or 1  # Prevent zero division
         eigen = [math.ceil(v[0]/magnitude), math.ceil(v[1]/magnitude)]
 
         # Prepare new coordinates and new proper origin in the grid frame
@@ -159,7 +167,7 @@ tetrominoes = (
     ),
     Polyomino(
         name='l',
-        coords=[[-2, 0], [-1, 0], [0, 0], [1, 0]],
+        coords=[[D('-1.5'), D('-0.5')], [D('-0.5'), D('-0.5')], [D('0.5'), D('-0.5')], [D('1.5'), D('-0.5')]],
         colors={'normal': '#6666CC',
                 'light' : '#7979FC',
                 'dark'  : '#3B3B80'},
@@ -173,7 +181,7 @@ tetrominoes = (
     ),
     Polyomino(
         name='o',
-        coords=[[-1, 1], [-1, 0], [0, 0], [0, 1]],
+        coords=[[D('-0.5'), D('0.5')], [D('-0.5'), D('-0.5')], [D('0.5'), D('0.5')], [D('0.5'), D('-0.5')]],
         colors={'normal': '#CC66CC',
                 'light' : '#FC79FC',
                 'dark'  : '#803B80'},
@@ -290,7 +298,7 @@ class PySirtet(tk.Frame):
         # Setup game state
         self.grid = Grid(self.opts)
         self.piece = None
-        self.paused = None
+        self.paused = False
         self.removed = {l + 1: 0 for l in range(4)}
         self.score = tk.IntVar()
 
@@ -318,9 +326,9 @@ class PySirtet(tk.Frame):
         self.removed[rows_removed] += 1
         self.score.set(self.score.get() + self.points[rows_removed])
 
-    def _update_grid(self, piece, clear=False):
+    def _update_board(self, piece, clear=False):
         '''
-        Place or clear piece on the grid
+        Place or clear piece on the board
         '''
         for v in piece.coords:
             square = self.grid[v]
@@ -442,13 +450,13 @@ class PySirtet(tk.Frame):
 
     def add_piece(self):
         '''
-        Add a tetromino to the top center of the grid
+        Add a tetromino to the top center of the board
         '''
-        new_name = random.choice(tetrominoes).name
-        self.piece = copy.deepcopy([td for td in tetrominoes if td.name == new_name][0])
-        if not self.piece.translate([self.opts['size']['width']//2, self.opts['size']['height'] - 1 - max([c[1] for c in self.piece.coords])], self.grid):
+        name = random.choice(tetrominoes).name
+        self.piece = copy.deepcopy([t for t in tetrominoes if t.name == name][0])
+        if not self.piece.translate([self.opts['size']['width']//2, self.opts['size']['height'] - 1 - self.piece.max(1)], self.grid):
             pass  # Game Over
-        self._update_grid(self.piece)
+        self._update_board(self.piece)
 
     def move_piece(self, movement):
         '''
@@ -475,9 +483,9 @@ class PySirtet(tk.Frame):
             Transformation.bottom: (self.piece.translate, movement, {'incremental': True}),
         }.get(movement)
         # Execute the transformation on the current piece if possible
-        self._update_grid(self.piece, clear=True)
+        self._update_board(self.piece, clear=True)
         result = transform(magnitude, self.grid, **kwargs)
-        self._update_grid(self.piece)  # (Re)place
+        self._update_board(self.piece)  # (Re)place
         return result
 
     def remove_rows(self):
@@ -501,19 +509,19 @@ class PySirtet(tk.Frame):
                 full_count += 1
                 row.full = True
                 row.colors = full_colors
-                self._update_grid(row, clear=True)
-                self._update_grid(row)
+                self._update_board(row, clear=True)
+                self._update_board(row)
 
         # Remove full rows and move partial rows down into the vacancies
         if full_count:
             self._update_score(full_count)
             for row in rows:
                 if row.full:
-                    self._update_grid(row, clear=True)
+                    self._update_board(row, clear=True)
                 elif row.full_below:
-                    self._update_grid(row, clear=True)
+                    self._update_board(row, clear=True)
                     row.translate([0, -row.full_below], self.grid)
-                    self._update_grid(row)
+                    self._update_board(row)
 
 
 class Config:

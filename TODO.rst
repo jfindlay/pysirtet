@@ -12,8 +12,8 @@ Features
 - UI
 
   * Preview next piece
-  * Score
   * Rows removed
+  * Game over
 
 - Config
 

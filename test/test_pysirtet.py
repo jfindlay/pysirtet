@@ -58,7 +58,7 @@ class TestPolyomino:
             for y in range(self.grid.height):
                 assert False == Polyomino._check_grid(Polyomino, [(x, y)], self.grid)
 
-    def test__min(self):
+    def test_min(self):
         '''
         Test the minimum coordinate function
         '''
@@ -68,9 +68,9 @@ class TestPolyomino:
         p = Polyomino(None, None, coords)
 
         for i in range(2):
-            assert p._min(i) == min([c[i] for c in coords])
+            assert p.min(i) == min([c[i] for c in coords])
 
-    def test__max(self):
+    def test_max(self):
         '''
         Test the maximum coordinate function
         '''
@@ -80,7 +80,7 @@ class TestPolyomino:
         p = Polyomino(None, None, coords)
 
         for i in range(2):
-            assert p._max(i) == max([c[i] for c in coords])
+            assert p.max(i) == max([c[i] for c in coords])
 
     def test_rotate(self):
         '''
@@ -111,14 +111,14 @@ class TestPolyomino:
             # Test each single row/column translation
             for translation in ([-1, 0], [1, 0], [0, -1]):
                 # Move piece to center of grid
-                tetromino.translate([self.grid.width//2 - tetromino.o[0], self.grid.height//2 - tetromino.o[1]], self.grid)
+                tetromino.translate([self.grid.width//2 - int(tetromino.o[0]), self.grid.height//2 - int(tetromino.o[1])], self.grid)
                 # Test that translation is successful
                 assert True == tetromino.translate(translation, self.grid)
 
             # Test each extremal translation
             for translation in (Transformation.min, Transformation.max, Transformation.bottom):
                 # Move piece to center of grid
-                tetromino.translate([self.grid.width//2 - tetromino.o[0], self.grid.height//2 - tetromino.o[1]], self.grid)
+                tetromino.translate([self.grid.width//2 - int(tetromino.o[0]), self.grid.height//2 - int(tetromino.o[1])], self.grid)
                 # Test that translation is successful
                 assert True == tetromino.translate(translation, self.grid)
                 # Test that translation is idempotent
@@ -127,11 +127,11 @@ class TestPolyomino:
                 assert coords == tetromino.coords
                 # Test that translation is extremal
                 if translation == Transformation.min:
-                    assert 0 == tetromino._min(0)
+                    assert 0 == tetromino.min(0)
                 if translation == Transformation.max:
-                    assert self.grid.width == tetromino._max(0) + 1
+                    assert self.grid.width == tetromino.max(0) + 1
                 if translation == Transformation.bottom:
-                    assert 0 == tetromino._min(1)
+                    assert 0 == tetromino.min(1)
 
 
 class TestGrid:
