@@ -222,7 +222,7 @@ class Grid:
         self.opts = opts
 
         # Initialize internal grid
-        self._grid = [[{'type': None, 'id': None, 'colors': {}} for i in range(self.opts['size']['height'])] for j in range(self.opts['size']['width'])]
+        self._grid = [[{'type': None, 'id': None, 'colors': {}} for i in range(self.opts['board']['size']['height'])] for j in range(self.opts['board']['size']['width'])]
         self.width = len(self._grid)
         self.height = len(self._grid[0])
 
@@ -302,7 +302,6 @@ class PySirtet(tk.Frame):
         self.board_width = self.scale*self.opts['size']['width']
         self.board_height = self.scale*self.opts['size']['height']
         self.border = self.scale//16
-        self.points = {l + 1: (l + 1)*4 for l in range(4)}
 
         # Setup game state
         self.state_name = tk.StringVar()
@@ -311,6 +310,7 @@ class PySirtet(tk.Frame):
         self.grid = Grid(self.opts)
         self.piece = None
         self.removed = {l + 1: 0 for l in range(4)}
+        self.points = {l + 1: self.grid.width*(l + 1)**2 for l in range(4)}
         self.score = tk.IntVar()
 
         # Setup TK
@@ -322,13 +322,14 @@ class PySirtet(tk.Frame):
         self.add_piece()
         self.iterate_id = self.master.after(self._get_loop_wait(), self.iterate)
 
-    def _get_loop_wait(self):
+    def _get_loop_wait(self, stick=False):
         '''
         Wait between game ticks [milliseconds]
         '''
         epsilon = sys.float_info.epsilon*3
         level_speed = self.opts['speed']*(math.log(self.level.get(), 2) + 1)
-        return round(1e3/(level_speed if level_speed > epsilon else epsilon))
+        multiplier = 1e3*(self.opts['stick_fraction'] if stick else 1)
+        return round(multiplier/(level_speed if level_speed > epsilon else epsilon) or epsilon)
 
     def _set_state(self, state):
         '''
@@ -480,7 +481,6 @@ class PySirtet(tk.Frame):
         Move the active piece one row down
         '''
         if not self.move_piece(Transformation.down):
-            time.sleep(self.opts['speed']*self.opts['stick_fraction'])
             self.remove_rows()
             self.add_piece()
         if self.opts['debug']:
@@ -503,14 +503,14 @@ class PySirtet(tk.Frame):
         '''
         Move current piece according to the movement requested:
 
-        - (down) One row down
-        - (left) One column left
-        - (right) One column right
-        - (bottom) To the lowest available position
-        - (min) To the leftmost available position
-        - (max) To the rightmost available position
         - (cw) Rotate π/2 clockwise about piece proper origin
         - (ccw) Rotate π/2 counterclockwise about piece proper origin
+        - (left) One column left
+        - (right) One column right
+        - (down) One row down
+        - (min) To the leftmost available position
+        - (max) To the rightmost available position
+        - (bottom) To the lowest available position
         '''
         # Map each movement to a predefined transformation on the current piece
         transform, kwargs = {
@@ -553,17 +553,22 @@ class PySirtet(tk.Frame):
                 self._update_board(row, clear=True)
                 self._update_board(row)
 
-        # Remove full rows and move partial rows down into the vacancies
-        if full_count:
-            for row in rows:
-                if row.full:
-                    self._update_board(row, clear=True)
-                elif row.full_below:
-                    self._update_board(row, clear=True)
-                    row.translate([0, -row.full_below], self.grid)
-                    self._update_board(row)
-            self._update_score(full_count)
-            self._update_level()
+        def remove():
+            '''
+            Remove the rows
+            '''
+            # Remove full rows and move partial rows down into the vacancies
+            if full_count:
+                for row in rows:
+                    if row.full:
+                        self._update_board(row, clear=True)
+                    elif row.full_below:
+                        self._update_board(row, clear=True)
+                        row.translate([0, -row.full_below], self.grid)
+                        self._update_board(row)
+                self._update_score(full_count)
+                self._update_level()
+        self.master.after(self._get_loop_wait(stick=True), remove)
 
 
 class Config:
@@ -580,8 +585,10 @@ class Config:
         self.defaults = {
             'config_file': os.path.join(os.environ.get('HOME', ''), '.config/pysirtet/pysirtet.conf'),
             'debug': False,
-            'size': {'width': 10, 'height': 22},  # [blocks]
-            'scale': 32,  # [pixels/block] number of pixels per block side
+            'board': {
+                'size': {'width': 10, 'height': 22},  # [blocks]
+                'scale': 32,  # [pixels/block] number of pixels per block side
+            },
             'speed': 1,  # [blocks/second] Initial speed: increases by log_2 of the previous level
             'level_multiplier': 16,  # [rows/level] Initial number of rows cleared for level advancement: increases by log_2 of the previous level
             'constant': False,  # Do not increase game speed
@@ -625,11 +632,11 @@ class Config:
             raise ArgumentTypeError('Incorrect size')
 
         # Construct return data and return
-        grid_size = {}
+        board_size = {}
         for token in ('width', 'height'):
             value = match.group(token)
-            grid_size[token] = int(value) if value is not None else 0
-        return grid_size
+            board_size[token] = int(value) if value is not None else 0
+        return board_size
 
     def _get_config(self, config_file):
         '''
@@ -640,12 +647,13 @@ class Config:
         config.read(config_file)
 
         # Window configs
-        if config.has_section('grid'):
-            opts['size'] = config.get('grid', 'size', vars=self.defaults)
-            opts['scale'] = config.get('grid', 'scale', vars=self.defaults)
+        opts['board'] = {}
+        if config.has_section('board'):
+            opts['board']['size'] = config.get('board', 'size', vars=self.defaults)
+            opts['board']['scale'] = config.get('board', 'scale', vars=self.defaults)
         else:
-            opts['size'] = self.defaults['size']
-            opts['scale'] = self.defaults['scale']
+            opts['board']['size'] = self.defaults['board']['size']
+            opts['board']['scale'] = self.defaults['board']['scale']
 
         # Game configs
         if config.has_section('game'):
@@ -662,8 +670,8 @@ class Config:
             opts['stick_fraction'] = self.defaults['stick_fraction']
 
         # Keys configs
+        opts['keys'] = {}
         if config.has_section('keys'):
-            opts['keys'] = {}
             for key in opts['keys'].keys():
                 opts['keys'][key] = config.get('keys', key, vars=self.defaults['keys'])
         else:
@@ -687,11 +695,11 @@ class Config:
                                 action='store_true',
                                 help='Run game in debug mode')
         arg_parser.add_argument('-s', '--size',
-                                default='{0[width]}x{0[height]}'.format(self.defaults['size']),
+                                default='{0[width]}x{0[height]}'.format(self.defaults['board']['size']),
                                 type=self._size,
                                 help='Board size [blocks^2]')
         arg_parser.add_argument('-a', '--scale',
-                                default=self.defaults['scale'],
+                                default=self.defaults['board']['scale'],
                                 type=int,
                                 help='Board scale [pixels/block]')
         arg_parser.add_argument('-S', '--speed',
@@ -708,7 +716,11 @@ class Config:
         '''
         Setup program options
         '''
-        # Override configs with values from command line
+        # Config resolution:
+        # 0. programmatic defaults
+        # 1. dynamically set programmatic values
+        # 2. config file values
+        # 3. command line values
         args = self.defaults if self.test else self._get_args()
         opts = self._get_config(args['config_file'])
         opts.update(args)
