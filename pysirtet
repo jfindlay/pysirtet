@@ -191,7 +191,7 @@ tetrominoes = (
     ),
     Polyomino(
         name='L',
-        coords=[[0, 1], [0, 0], [0, -1], [1, -1]],
+        coords=[[-1, 1], [-1, 0], [-1, -1], [0, -1]],
         colors={'normal': '#66CCCC',
                 'light' : '#79FCFC',
                 'dark'  : '#3B8080'},
@@ -302,14 +302,18 @@ class PySirtet(tk.Frame):
         self.board_width = self.scale*self.opts['size']['width']
         self.board_height = self.scale*self.opts['size']['height']
         self.border = self.scale//16
+        self.full_colors={'normal': '#FFFFFF',
+                          'light' : '#FFFFFF',
+                          'dark'  : '#FFFFFF'}
 
         # Setup game state
-        self.state_name = tk.StringVar()
-        self._set_state(GameState.running)
-        self.level = tk.IntVar(value=1)
         self.grid = Grid(self.opts)
         self.piece = None
+        self.state_name = tk.StringVar()
+        self.set_state(GameState.running)
+        self.level = tk.IntVar(value=1)
         self.removed = {l + 1: 0 for l in range(4)}
+        self.removed_total = tk.IntVar()
         self.points = {l + 1: self.grid.width*(l + 1)**2 for l in range(4)}
         self.score = tk.IntVar()
 
@@ -329,24 +333,14 @@ class PySirtet(tk.Frame):
         epsilon = sys.float_info.epsilon*3
         level_speed = self.opts['speed']*(math.log(self.level.get(), 2) + 1)
         multiplier = 1e3*(self.opts['stick_fraction'] if stick else 1)
-        return round(multiplier/(level_speed if level_speed > epsilon else epsilon) or epsilon)
-
-    def _set_state(self, state):
-        '''
-        Set the game state
-        '''
-        self.state = state
-        self.state_name.set({
-            GameState.running: '',
-            GameState.paused: 'Paused',
-            GameState.over: 'Game Over',
-        }.get(state))
+        return math.ceil(multiplier/(level_speed if level_speed > epsilon else epsilon) or epsilon)
 
     def _update_score(self, rows_removed):
         '''
         Update the score
         '''
         self.removed[rows_removed] += 1
+        self.removed_total.set(self.removed_total.get() + rows_removed)
         self.score.set(self.score.get() + self.points[rows_removed])
 
     def _update_level(self):
@@ -371,6 +365,26 @@ class PySirtet(tk.Frame):
                 square.update({'type': piece.name,
                                'id': self._draw_square(v, colors),
                                'colors': colors})
+
+    def _get_rows(self):
+        '''
+        Gather all full and partial rows and mark full rows
+        '''
+        self.rows = []
+        self.full_count = 0
+        for y in range(self.grid.height):
+            row_coords = [[x, y] for x in range(self.grid.width) if self.grid[x, y]['type']]
+            if len(row_coords):
+                row = Polyomino('row', {v[0]: self.grid[v]['colors'] for v in row_coords}, row_coords)
+                self.rows.append(row)
+                row.full = False
+                row.full_below = self.full_count
+            if len(row_coords) == self.grid.width:
+                self.full_count += 1
+                row.full = True
+                row.colors = self.full_colors
+                self._update_board(row, clear=True)
+                self._update_board(row)
 
     def _transform_coord(self, v):
         '''
@@ -414,6 +428,17 @@ class PySirtet(tk.Frame):
 
         return board
 
+    def set_state(self, state):
+        '''
+        Set the game state
+        '''
+        self.state = state
+        self.state_name.set({
+            GameState.running: '',
+            GameState.paused: 'paused',
+            GameState.over: 'game over',
+        }.get(state))
+
     def create_widgets(self):
         '''
         Pack in game widgets
@@ -424,15 +449,20 @@ class PySirtet(tk.Frame):
         self.marquee = tk.Frame(self)
         self.marquee.pack(side='right', padx=self.scale, pady=self.scale)
 
-        self.level_board = tk.LabelFrame(self.marquee, text='level')
-        self.level_board.pack(side='top')
-        self.level_total = tk.Label(self.level_board, textvariable=self.level, width=4)
-        self.level_total.pack(side='top')
+        self.level_frame = tk.LabelFrame(self.marquee, text='level')
+        self.level_frame.pack(side='top')
+        self.level_label = tk.Label(self.level_frame, textvariable=self.level, width=4)
+        self.level_label.pack(side='top')
 
-        self.score_board = tk.LabelFrame(self.marquee, text='score')
-        self.score_board.pack(side='top')
-        self.score_total = tk.Label(self.score_board, textvariable=self.score, width=4)
-        self.score_total.pack(side='top')
+        self.score_frame = tk.LabelFrame(self.marquee, text='score')
+        self.score_frame.pack(side='top')
+        self.score_label = tk.Label(self.score_frame, textvariable=self.score, width=4)
+        self.score_label.pack(side='top')
+
+        self.removed_frame = tk.LabelFrame(self.marquee, text='removed')
+        self.removed_frame.pack(side='top')
+        self.removed_label = tk.Label(self.removed_frame, textvariable=self.removed_total, width=4)
+        self.removed_label.pack(side='top')
 
         self.state_label = tk.Label(self.marquee, textvariable=self.state_name)
         self.state_label.pack(side='top')
@@ -450,10 +480,17 @@ class PySirtet(tk.Frame):
         '''
         if self.state == GameState.running:
             self.after_cancel(self.iterate_id)
-            self._set_state(GameState.paused)
+            self.pause_cover_id = self.board.create_rectangle(0, 0,
+                                                              self.scale*(self.grid.width + 1),
+                                                              self.scale*(self.grid.height + 1),
+                                                              fill='black',
+                                                              outline='black',
+                                                              width=0)
+            self.set_state(GameState.paused)
         elif self.state == GameState.paused:
             self.iterate_id = self.master.after(self._get_loop_wait(), self.iterate)
-            self._set_state(GameState.running)
+            self.board.delete(self.pause_cover_id)
+            self.set_state(GameState.running)
 
     def move(transformation):
         '''
@@ -476,6 +513,25 @@ class PySirtet(tk.Frame):
     down = move(Transformation.down)
     drop = move(Transformation.bottom)
 
+    def restart(self):
+        '''
+        Restart the game
+        '''
+        # Setup game state
+        self.clear_board()
+        self.set_state(GameState.running)
+        self.grid = Grid(self.opts)
+        self.piece = None
+        self.level.set(1)
+        self.score.set(0)
+        self.removed = {l + 1: 0 for l in range(4)}
+        self.removed_total.set(0)
+
+        # Setup TK
+        self.restart_button.destroy()
+        self.add_piece()
+        self.iterate_id = self.master.after(self._get_loop_wait(), self.iterate)
+
     def iterate(self):
         '''
         Move the active piece one row down
@@ -487,6 +543,9 @@ class PySirtet(tk.Frame):
             self.grid.print()
         if self.state != GameState.over:
             self.iterate_id = self.master.after(self._get_loop_wait(), self.iterate)
+        else:
+            self.restart_button = tk.Button(self.marquee, text='restart', command=self.restart)
+            self.restart_button.pack(side='top')
 
     def add_piece(self):
         '''
@@ -497,7 +556,7 @@ class PySirtet(tk.Frame):
         if self.piece.translate([self.opts['size']['width']//2, self.opts['size']['height'] - 1 - self.piece.max(1)], self.grid):
             self._update_board(self.piece)
         else:
-            self._set_state(GameState.over)
+            self.set_state(GameState.over)
 
     def move_piece(self, movement):
         '''
@@ -531,44 +590,33 @@ class PySirtet(tk.Frame):
 
     def remove_rows(self):
         '''
-        Remove any full rows
+        Remove full rows
         '''
-        # Gather all full and partial rows and mark full rows
-        rows = []
-        full_count = 0
-        full_colors={'normal': '#FFFFFF',
-                     'light' : '#FFFFFF',
-                     'dark'  : '#FFFFFF'}
-        for y in range(self.grid.height):
-            row_coords = [[x, y] for x in range(self.grid.width) if self.grid[x, y]['type']]
-            if len(row_coords):
-                row = Polyomino('row', {v[0]: self.grid[v]['colors'] for v in row_coords}, row_coords)
-                rows.append(row)
-                row.full = False
-                row.full_below = full_count
-            if len(row_coords) == self.grid.width:
-                full_count += 1
-                row.full = True
-                row.colors = full_colors
-                self._update_board(row, clear=True)
-                self._update_board(row)
-
         def remove():
             '''
-            Remove the rows
+            Remove full rows and move partial rows down into the vacancies
             '''
-            # Remove full rows and move partial rows down into the vacancies
-            if full_count:
-                for row in rows:
+            if self.full_count:
+                for row in self.rows:
                     if row.full:
                         self._update_board(row, clear=True)
                     elif row.full_below:
                         self._update_board(row, clear=True)
                         row.translate([0, -row.full_below], self.grid)
                         self._update_board(row)
-                self._update_score(full_count)
+                self._update_score(self.full_count)
                 self._update_level()
+
+        self._get_rows()
         self.master.after(self._get_loop_wait(stick=True), remove)
+
+    def clear_board(self):
+        '''
+        Remove all occupied squares from the board
+        '''
+        self._get_rows()
+        for row in self.rows:
+            self._update_board(row, clear=True)
 
 
 class Config:
@@ -592,7 +640,7 @@ class Config:
             'speed': 1,  # [blocks/second] Initial speed: increases by log_2 of the previous level
             'level_multiplier': 16,  # [rows/level] Initial number of rows cleared for level advancement: increases by log_2 of the previous level
             'constant': False,  # Do not increase game speed
-            'stick_fraction': 1/4,  # Fraction of the game speed to wait when a piece bottoms out and a new piece is introduced
+            'stick_fraction': 1/4,  # Fraction of the game loop to wait when a piece bottoms out and a new piece is introduced
             'keys': {
                 'pause': 'p',
                 'left': ',',
