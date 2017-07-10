@@ -347,7 +347,7 @@ class PySirtet(tk.Frame):
         '''
         Update the game level
         '''
-        if not self.opts['constant'] and sum([n*r for n, r in self.removed.items()]) > round(self.opts['level_multiplier']*(math.log(self.level.get(), 2) + 1)):
+        if not self.opts['constant'] and self.removed_total.get() > round(self.opts['level_multiplier']*self.level.get()*(math.log(self.level.get(), 2) + 1)):
             self.level.set(self.level.get() + 1)
 
     def _update_board(self, piece, clear=False):
