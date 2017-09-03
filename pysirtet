@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Import python libs
 import os
@@ -29,6 +28,15 @@ class Transformation(enum.Enum):
     min = 6  # Left side
     max = 7  # Right side
     bottom = 8  # Bottom side
+
+
+class GameState(enum.Enum):
+    '''
+    Account game state
+    '''
+    run = 0
+    pause = 1
+    over = 2
 
 
 class Polyomino:
@@ -113,7 +121,8 @@ class Polyomino:
         places the polyomino within the grid and on unoccupied squares
 
         :param incremental: If true, move the polyomino one row/column at a
-        time in the direction of v
+        time in the direction of v until the full translation, v, is achieved,
+        or as far as possible along the direction of v
         '''
         # Redefine v as explicit coordinates in the grid reference frame
         if isinstance(v, Transformation):
@@ -156,21 +165,21 @@ class Polyomino:
 tetrominoes = (
     Polyomino(
         name='Z',
-        coords=[[-1, 1], [0, 1], [0, 0], [1, 0]],
+        coords=[[D('-1.5'), 0], [D('-0.5'), 0], [D('-0.5'), -1], [D('0.5'), -1]],
         colors={'normal': '#CC6666',
                 'light' : '#F89FAB',
                 'dark'  : '#803C3B'},
     ),
     Polyomino(
         name='S',
-        coords=[[-1, 0], [0, 0], [0, 1], [1, 1]],
+        coords=[[D('-0.5'), -1], [D('0.5'), -1], [D('0.5'), 0], [D('1.5'), 0]],
         colors={'normal': '#66CC66',
                 'light' : '#79FC79',
                 'dark'  : '#3B803B'},
     ),
     Polyomino(
         name='l',
-        coords=[[D('-1.5'), D('-0.5')], [D('-0.5'), D('-0.5')], [D('0.5'), D('-0.5')], [D('1.5'), D('-0.5')]],
+        coords=[[D('-1.5'), 0], [D('-0.5'), 0], [D('0.5'), 0], [D('1.5'), 0]],
         colors={'normal': '#6666CC',
                 'light' : '#7979FC',
                 'dark'  : '#3B3B80'},
@@ -214,7 +223,7 @@ class Grid:
     point at its upper right corner.  The origin corresponds to the upper right
     corner of the lower left square of the grid
     '''
-    def __init__(self, opts):
+    def __init__(self, opts, width, height):
         '''
         Setup game grid
         '''
@@ -222,7 +231,7 @@ class Grid:
         self.opts = opts
 
         # Initialize internal grid
-        self._grid = [[{'type': None, 'id': None, 'colors': {}} for i in range(self.opts['board']['size']['height'])] for j in range(self.opts['board']['size']['width'])]
+        self._grid = [[{'type': None, 'id': None, 'colors': {}} for i in range(height)] for j in range(width)]
         self.width = len(self._grid)
         self.height = len(self._grid[0])
 
@@ -269,23 +278,144 @@ class Grid:
         for v, square in self:
             if not v[1] in rows:
                 rows[v[1]] = {}
-            rows[v[1]][v[0]] = ' ' if square['type'] is None else square['type'].name
+            rows[v[1]][v[0]] = ' ' if square['type'] is None else square['type']
         for i, row in enumerate(rows):
-            rows[i] = ''.join([2*rows[i][j] for j in sorted(rows[i].keys())])
+            rows[i] = ''.join([2*rows[i][j] if len(rows[i][j]) == 1 else rows[i][j][:2] for j in sorted(rows[i].keys())])
 
         # Print rows with formatting
-        digits = len(str(self.opts['size']['height']))
+        digits = len(str(self.opts['board']['height']))
         row_fmt = '{{:0{}}}'.format(digits)
         print(digits*' ' + '+' + 2*len(self._grid)*'-' + '+')
         for i in reversed(list(rows.keys())):
-            print(row_fmt.format(self.opts['size']['height'] - i - 1) + '|' + rows[i] + '|')
+            print(row_fmt.format(self.opts['board']['height'] - i - 1) + '|' + rows[i] + '|')
         print(digits*' ' + '+' + 2*len(self._grid)*'-' + '+')
 
 
-class GameState(enum.Enum):
-    running = 0
-    paused = 1
-    over = 2
+class Board(tk.Canvas):
+    '''
+    Used to display polyomino block grid
+    '''
+    @property
+    def width(self): return self.grid.width
+
+    @property
+    def height(self): return self.grid.height
+
+    def __init__(self, opts, parent, width, height, is_projection=False):
+        '''
+        Setup board
+        '''
+        # Setup options
+        self.opts = opts
+        self.is_projection = is_projection
+        self.border_width = self.opts['scale']//16
+        self.aspect_proportion = 3 if self.is_projection else 1
+        self.full_row_colors={'normal': '#DDDDDD',
+                              'light' : '#FFFFFF',
+                              'dark'  : '#BBBBBB'}
+
+        # Setup internal grid
+        self.grid = Grid(self.opts, width, height)
+
+        # Setup TK
+        super().__init__(parent,
+                         width=self.opts['scale']*width,
+                         height=self.opts['scale']*height//self.aspect_proportion)
+        self.create_rectangle(0, 0,
+                              self.opts['scale']*width, self.opts['scale']*height,
+                              fill='black',
+                              outline='black',
+                              width=self.border_width)
+
+        if self.opts['debug']:
+            for v, square in self.grid:
+                u = self._transform_coord(v)
+                self.create_text((self.opts['scale']*u[0], self.opts['scale']*u[1]),
+                                 text='{},{}'.format(*u),
+                                 fill='white', font=('Monospace', 5), anchor=tk.NW)
+
+    def _transform_coord(self, v):
+        '''
+        pysirtet treats the game board as the first quadrant of the Cartesian
+        plane with the origin at the lower left corner, whereas Tkinter,
+        conventionally, places the origin in the upper left corner, with
+        positive x and y directions pointing right and down, respectively.
+
+        This function transforms pysirtet coordinates into Tkinter coordinates.
+        '''
+        return [v[0], self.height - 1 - v[1]]
+
+    def _draw_square(self, v, colors):
+        '''
+        Draw or clear a polyomino square on the board at v
+        '''
+        u = self._transform_coord(v)
+        return self.create_rectangle(self.opts['scale']*u[0] + self.border_width,
+                                     self.opts['scale']*u[1] + self.border_width,
+                                     self.opts['scale']*(u[0] + 1),
+                                     self.opts['scale']*(u[1] + 1),
+                                     fill=colors['normal'],
+                                     outline=colors['dark'],
+                                     width=self.border_width)
+
+    def update(self, piece, clear=False):
+        '''
+        Place or clear piece on the board
+        '''
+        for v in piece.coords:
+            u = [v[0], 0] if self.is_projection else v
+            square = self.grid[u]
+            colors = piece.colors[v[0]] if piece.name == 'row' and not piece.full else piece.colors
+            if clear:
+                square.update({'type': None,
+                               'id': self.delete(square['id']),
+                               'colors': {}})
+            else:
+                if not square['id']:
+                    square.update({'type': piece.name,
+                                   'id': self._draw_square(u, colors),
+                                   'colors': colors})
+
+    def get_rows(self):
+        '''
+        Gather all full and partial rows and mark full rows
+        '''
+        rows = []
+        full_count = 0
+        for y in range(self.grid.height):
+            row_coords = [[x, y] for x in range(self.width) if self.grid[x, y]['type']]
+            if len(row_coords):
+                row = Polyomino('row', {v[0]: self.grid[v]['colors'] for v in row_coords}, row_coords)
+                rows.append(row)
+                row.full = False
+                row.full_below_count = full_count
+            if len(row_coords) == self.grid.width:
+                full_count += 1
+                row.full = True
+                row.colors = self.full_row_colors
+                self.update(row, clear=True)
+                self.update(row)
+        return full_count, rows
+
+    def remove_full_rows(self, rows):
+        '''
+        Remove full rows and move partial rows down into the vacancies
+        '''
+        for row in rows:
+            if row.full:
+                self.update(row, clear=True)
+            elif row.full_below_count:
+                self.update(row, clear=True)
+                row.translate([0, -row.full_below_count], self.grid)
+                self.update(row)
+
+    def clear(self):
+        '''
+        Remove all occupied squares from the board
+        '''
+        full_count, rows = self.get_rows()
+        for row in rows:
+            self.update(row, clear=True)
 
 
 class PySirtet(tk.Frame):
@@ -294,27 +424,20 @@ class PySirtet(tk.Frame):
     '''
     def __init__(self, opts, master=None):
         '''
-        Setup game window
+        Setup game
         '''
         # Setup options
         self.opts = opts
-        self.scale = self.opts['scale']
-        self.board_width = self.scale*self.opts['size']['width']
-        self.board_height = self.scale*self.opts['size']['height']
-        self.border = self.scale//16
-        self.full_colors={'normal': '#FFFFFF',
-                          'light' : '#FFFFFF',
-                          'dark'  : '#FFFFFF'}
 
-        # Setup game state
-        self.grid = Grid(self.opts)
+        # Setup game data and state
+        self.next_piece = None
         self.piece = None
         self.state_name = tk.StringVar()
-        self.set_state(GameState.running)
+        self.set_state(GameState.run)
         self.level = tk.IntVar(value=1)
         self.removed = {l + 1: 0 for l in range(4)}
         self.removed_total = tk.IntVar()
-        self.points = {l + 1: self.grid.width*(l + 1)**2 for l in range(4)}
+        self.points = {l + 1: self.opts['board']['width']*(l + 1)**2 for l in range(4)}
         self.score = tk.IntVar()
 
         # Setup TK
@@ -350,104 +473,37 @@ class PySirtet(tk.Frame):
         if not self.opts['constant'] and self.removed_total.get() > round(self.opts['level_multiplier']*self.level.get()*(math.log(self.level.get(), 2) + 1)):
             self.level.set(self.level.get() + 1)
 
-    def _update_board(self, piece, clear=False):
+    def _update_game_board(self, piece, clear=False):
         '''
-        Place or clear piece on the board
+        Place or clear piece and its projection or shadow on the board
         '''
-        for v in piece.coords:
-            square = self.grid[v]
-            colors = piece.colors[v[0]] if piece.name == 'row' and not piece.full else piece.colors
-            if clear:
-                square.update({'type': None,
-                               'id': self.board.delete(square['id']),
-                               'colors': {}})
-            else:
-                square.update({'type': piece.name,
-                               'id': self._draw_square(v, colors),
-                               'colors': colors})
-
-    def _get_rows(self):
-        '''
-        Gather all full and partial rows and mark full rows
-        '''
-        self.rows = []
-        self.full_count = 0
-        for y in range(self.grid.height):
-            row_coords = [[x, y] for x in range(self.grid.width) if self.grid[x, y]['type']]
-            if len(row_coords):
-                row = Polyomino('row', {v[0]: self.grid[v]['colors'] for v in row_coords}, row_coords)
-                self.rows.append(row)
-                row.full = False
-                row.full_below = self.full_count
-            if len(row_coords) == self.grid.width:
-                self.full_count += 1
-                row.full = True
-                row.colors = self.full_colors
-                self._update_board(row, clear=True)
-                self._update_board(row)
-
-    def _transform_coord(self, v):
-        '''
-        pysirtet treats the game board as the first quadrant of the Cartesian
-        plane with the origin at the lower left corner, whereas Tkinter,
-        conventionally, places the origin in the upper left corner, with
-        positive x and y directions pointing right and down, respectively
-        '''
-        return [v[0], self.opts['size']['height'] - 1 - v[1]]
-
-    def _draw_square(self, v, colors):
-        '''
-        Draw or clear a polyomino square on the board at v
-        '''
-        u = self._transform_coord(v)
-        return self.board.create_rectangle(self.scale*u[0] + self.border,
-                                           self.scale*u[1] + self.border,
-                                           self.scale*(u[0] + 1),
-                                           self.scale*(u[1] + 1),
-                                           fill=colors['normal'],
-                                           outline=colors['dark'],
-                                           width=self.border)
-
-    def _draw_board(self):
-        '''
-        Draw the game board
-        '''
-        board = tk.Canvas(self, width=self.board_width, height=self.board_height)
-        board.create_rectangle(0, 0,
-                               self.board_width, self.board_height,
-                               fill='black',
-                               outline='black',
-                               width=self.border)
-
-        if self.opts['debug']:
-            for v, square in self.grid:
-                u = self._transform_coord(v)
-                board.create_text((self.scale*u[0], self.scale*u[1]),
-                                  text='{},{}'.format(*v),
-                                  fill='white', font=('Monospace', 5), anchor=tk.NW)
-
-        return board
-
-    def set_state(self, state):
-        '''
-        Set the game state
-        '''
-        self.state = state
-        self.state_name.set({
-            GameState.running: '',
-            GameState.paused: 'paused',
-            GameState.over: 'game over',
-        }.get(state))
+        self.board.update(piece, clear=clear)
+        if self.opts['shadow'] == 'projection':
+            self.projection_board.update(piece, clear=clear)
 
     def create_widgets(self):
         '''
         Pack in game widgets
         '''
-        self.board = self._draw_board()
-        self.board.pack(side='left')
+        # Game frame
+        self.game = tk.Frame(self)
+        self.game.pack(side='left')
 
+        self.board = Board(self.opts, self.game, self.opts['board']['width'], self.opts['board']['height'])
+        self.board.pack(side='top')
+
+        if self.opts['shadow'] == 'projection':
+            self.projection_board = Board(self.opts, self.game, self.opts['board']['width'], 1, is_projection=True)
+            self.projection_board.pack(side='top')
+
+        # Marquee frame
         self.marquee = tk.Frame(self)
-        self.marquee.pack(side='right', padx=self.scale, pady=self.scale)
+        self.marquee.pack(side='right', padx=self.opts['scale'], pady=self.opts['scale'])
+
+        self.preview_frame = tk.LabelFrame(self.marquee, text='preview')
+        self.preview_frame.pack(side='top')
+        self.preview_board = Board(self.opts, self.preview_frame, 4, 4)  # Hardcoded for tetrominoes
+        self.preview_board.pack(side='top')
 
         self.level_frame = tk.LabelFrame(self.marquee, text='level')
         self.level_frame.pack(side='top')
@@ -467,6 +523,17 @@ class PySirtet(tk.Frame):
         self.state_label = tk.Label(self.marquee, textvariable=self.state_name)
         self.state_label.pack(side='top')
 
+    def set_state(self, state):
+        '''
+        Set the game state
+        '''
+        self.state = state
+        self.state_name.set({
+            GameState.run: '',
+            GameState.pause: 'paused',
+            GameState.over: 'game over',
+        }.get(state))
+
     def setup_events(self):
         '''
         Respond to inputs and other game conditions: mainly key input
@@ -478,19 +545,19 @@ class PySirtet(tk.Frame):
         '''
         (Un)pause the game
         '''
-        if self.state == GameState.running:
+        if self.state == GameState.run:
             self.after_cancel(self.iterate_id)
             self.pause_cover_id = self.board.create_rectangle(0, 0,
-                                                              self.scale*(self.grid.width + 1),
-                                                              self.scale*(self.grid.height + 1),
+                                                              self.opts['scale']*(self.board.width + 1),
+                                                              self.opts['scale']*(self.board.height + 1),
                                                               fill='black',
                                                               outline='black',
                                                               width=0)
-            self.set_state(GameState.paused)
-        elif self.state == GameState.paused:
+            self.set_state(GameState.pause)
+        elif self.state == GameState.pause:
             self.iterate_id = self.master.after(self._get_loop_wait(), self.iterate)
             self.board.delete(self.pause_cover_id)
-            self.set_state(GameState.running)
+            self.set_state(GameState.run)
 
     def move(transformation):
         '''
@@ -500,7 +567,7 @@ class PySirtet(tk.Frame):
             '''
             Transform the current piece
             '''
-            if self.state == GameState.running:
+            if self.state == GameState.run:
                 self.move_piece(transformation)
         return transform
 
@@ -518,9 +585,8 @@ class PySirtet(tk.Frame):
         Restart the game
         '''
         # Setup game state
-        self.clear_board()
-        self.set_state(GameState.running)
-        self.grid = Grid(self.opts)
+        self.board.clear()
+        self.set_state(GameState.run)
         self.piece = None
         self.level.set(1)
         self.score.set(0)
@@ -537,7 +603,7 @@ class PySirtet(tk.Frame):
         Move the active piece one row down
         '''
         if not self.move_piece(Transformation.down):
-            self.remove_rows()
+            self.remove_full_rows()
             self.add_piece()
         if self.opts['debug']:
             self.grid.print()
@@ -551,10 +617,29 @@ class PySirtet(tk.Frame):
         '''
         Add a tetromino to the top center of the board
         '''
-        name = random.choice(tetrominoes).name
-        self.piece = copy.deepcopy([t for t in tetrominoes if t.name == name][0])
-        if self.piece.translate([self.opts['size']['width']//2, self.opts['size']['height'] - 1 - self.piece.max(1)], self.grid):
-            self._update_board(self.piece)
+        def get_next_piece():
+            '''
+            Get a new piece
+            '''
+            self.preview_board.clear()
+            name = random.choice(tetrominoes).name
+            self.next_piece = copy.deepcopy([t for t in tetrominoes if t.name == name][0])
+            self.next_piece.translate([self.preview_board.width//2,
+                                       self.preview_board.height//2],
+                                      self.preview_board.grid)
+            self.preview_board.update(self.next_piece)
+
+        if not self.next_piece:
+            get_next_piece()
+        self.piece = copy.deepcopy(self.next_piece)
+        get_next_piece()
+
+        if self.piece.translate([self.board.width//2 - self.preview_board.width//2,
+                                 self.board.height - 1 - self.piece.max(1)],
+                                self.board.grid):
+            if self.opts['shadow'] == 'projection':
+                self.projection_board.clear()
+            self._update_game_board(self.piece)
         else:
             self.set_state(GameState.over)
 
@@ -583,40 +668,28 @@ class PySirtet(tk.Frame):
             Transformation.bottom: (self.piece.translate, {'incremental': True}),
         }.get(movement)
         # Execute the transformation on the current piece if possible
-        self._update_board(self.piece, clear=True)
-        result = transform(movement, self.grid, **kwargs)
-        self._update_board(self.piece)  # (Re)place
+        self._update_game_board(self.piece, clear=True)
+        result = transform(movement, self.board.grid, **kwargs)
+        # (Re)place
+        self._update_game_board(self.piece)
         return result
 
-    def remove_rows(self):
+    def remove_full_rows(self):
         '''
-        Remove full rows
+        Remove full rows and move partial rows down into the vacancies
         '''
-        def remove():
+        def remove_update(full_count, rows):
             '''
-            Remove full rows and move partial rows down into the vacancies
+            Update score, level, and board in the condition of one or more full
+            rows
             '''
-            if self.full_count:
-                for row in self.rows:
-                    if row.full:
-                        self._update_board(row, clear=True)
-                    elif row.full_below:
-                        self._update_board(row, clear=True)
-                        row.translate([0, -row.full_below], self.grid)
-                        self._update_board(row)
-                self._update_score(self.full_count)
-                self._update_level()
+            self._update_score(full_count)
+            self._update_level()
+            self.board.remove_full_rows(rows)
 
-        self._get_rows()
-        self.master.after(self._get_loop_wait(stick=True), remove)
-
-    def clear_board(self):
-        '''
-        Remove all occupied squares from the board
-        '''
-        self._get_rows()
-        for row in self.rows:
-            self._update_board(row, clear=True)
+        full_count, rows = self.board.get_rows()
+        if full_count:
+            self.master.after(self._get_loop_wait(stick=True), remove_update, full_count, rows)
 
 
 class Config:
@@ -634,13 +707,15 @@ class Config:
             'config_file': os.path.join(os.environ.get('HOME', ''), '.config/pysirtet/pysirtet.conf'),
             'debug': False,
             'board': {
-                'size': {'width': 10, 'height': 22},  # [blocks]
                 'scale': 32,  # [pixels/block] number of pixels per block side
+                'width': 10,  # [blocks]
+                'height': 22,  # [blocks]
             },
             'speed': 1,  # [blocks/second] Initial speed: increases by log_2 of the previous level
             'level_multiplier': 16,  # [rows/level] Initial number of rows cleared for level advancement: increases by log_2 of the previous level
             'constant': False,  # Do not increase game speed
             'stick_fraction': 1/4,  # Fraction of the game loop to wait when a piece bottoms out and a new piece is introduced
+            'shadow': 'projection',  # TODO: proposition
             'keys': {
                 'pause': 'p',
                 'left': ',',
@@ -697,11 +772,13 @@ class Config:
         # Window configs
         opts['board'] = {}
         if config.has_section('board'):
-            opts['board']['size'] = config.get('board', 'size', vars=self.defaults)
             opts['board']['scale'] = config.get('board', 'scale', vars=self.defaults)
+            opts['board']['width'] = config.get('board', 'width', vars=self.defaults)
+            opts['board']['height'] = config.get('board', 'height', vars=self.defaults)
         else:
-            opts['board']['size'] = self.defaults['board']['size']
             opts['board']['scale'] = self.defaults['board']['scale']
+            opts['board']['width'] = self.defaults['board']['width']
+            opts['board']['height'] = self.defaults['board']['height']
 
         # Game configs
         if config.has_section('game'):
@@ -710,12 +787,14 @@ class Config:
             opts['level_multiplier'] = config.get('game', 'level_multiplier', vars=self.defaults)
             opts['constant'] = config.get('game', 'constant', vars=self.defaults)
             opts['stick_fraction'] = config.get('game', 'stick_fraction', vars=self.defaults)
+            opts['shadow'] = config.get('game', 'shadow', vars=self.defaults)
         else:
             opts['debug'] = self.defaults['debug']
             opts['speed'] = self.defaults['speed']
             opts['level_multiplier'] = self.defaults['level_multiplier']
             opts['constant'] = self.defaults['constant']
             opts['stick_fraction'] = self.defaults['stick_fraction']
+            opts['shadow'] = self.defaults['shadow']
 
         # Keys configs
         opts['keys'] = {}
@@ -743,7 +822,7 @@ class Config:
                                 action='store_true',
                                 help='Run game in debug mode')
         arg_parser.add_argument('-s', '--size',
-                                default='{0[width]}x{0[height]}'.format(self.defaults['board']['size']),
+                                default='{0[width]}x{0[height]}'.format(self.defaults['board']),
                                 type=self._size,
                                 help='Board size [blocks^2]')
         arg_parser.add_argument('-a', '--scale',

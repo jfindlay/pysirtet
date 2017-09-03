@@ -6,15 +6,14 @@ Features
 
 - UI
 
-  * Preview next piece
   * Scale game size to screen size
   * Shadowing
 
-    - Projection of piece as a shadow below bottom of board (like ksirtet)
     - Shadow piece on the stack of tetrominoes where it would be placed if dropped down
 
 - Config
 
+  * GUI dialog
   * Read and write to config file
 
 - Scoring
