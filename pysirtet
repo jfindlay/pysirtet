@@ -313,6 +313,7 @@ class Board(tk.Canvas):
         self.full_row_colors={'normal': '#DDDDDD',
                               'light' : '#FFFFFF',
                               'dark'  : '#BBBBBB'}
+        self.pause_cover_id = None
 
         # Setup internal grid
         self.grid = Grid(self.opts, width, height)
@@ -350,10 +351,9 @@ class Board(tk.Canvas):
         Draw or clear a polyomino square on the board at v
         '''
         u = self._transform_coord(v)
-        return self.create_rectangle(self.opts['scale']*u[0] + self.border_width,
-                                     self.opts['scale']*u[1] + self.border_width,
-                                     self.opts['scale']*(u[0] + 1),
-                                     self.opts['scale']*(u[1] + 1),
+        u = [self.opts['scale']*u[0], self.opts['scale']*u[1]]
+        return self.create_rectangle(u[0] + self.border_width, u[1] + self.border_width,
+                                     u[0] + self.opts['scale'], u[1] + self.opts['scale']//self.aspect_proportion,
                                      fill=colors['normal'],
                                      outline=colors['dark'],
                                      width=self.border_width)
@@ -417,6 +417,26 @@ class Board(tk.Canvas):
         for row in rows:
             self.update(row, clear=True)
 
+    def add_pause_cover(self):
+        '''
+        Cover the board when game is paused
+        '''
+        if not self.pause_cover_id:
+            self.pause_cover_id = self.create_rectangle(0, 0,
+                                                        self.opts['scale']*(self.width + 1),
+                                                        self.opts['scale']*(self.height + 1),
+                                                        fill='black',
+                                                        outline='black',
+                                                        width=0)
+
+    def remove_pause_cover(self):
+        '''
+        Uncover the board when game is paused
+        '''
+        if self.pause_cover_id:
+            self.delete(self.pause_cover_id)
+            self.pause_cover_id = None
+
 
 class PySirtet(tk.Frame):
     '''
@@ -470,7 +490,7 @@ class PySirtet(tk.Frame):
         '''
         Update the game level
         '''
-        if not self.opts['constant'] and self.removed_total.get() > round(self.opts['level_multiplier']*self.level.get()*(math.log(self.level.get(), 2) + 1)):
+        if not self.opts['constant'] and self.removed_total.get() >= round(self.opts['level_multiplier']*self.level.get()*(math.log(self.level.get(), 2) + 1)):
             self.level.set(self.level.get() + 1)
 
     def _update_game_board(self, piece, clear=False):
@@ -507,17 +527,17 @@ class PySirtet(tk.Frame):
 
         self.level_frame = tk.LabelFrame(self.marquee, text='level')
         self.level_frame.pack(side='top')
-        self.level_label = tk.Label(self.level_frame, textvariable=self.level, width=4)
+        self.level_label = tk.Label(self.level_frame, textvariable=self.level, width=12)
         self.level_label.pack(side='top')
 
         self.score_frame = tk.LabelFrame(self.marquee, text='score')
         self.score_frame.pack(side='top')
-        self.score_label = tk.Label(self.score_frame, textvariable=self.score, width=4)
+        self.score_label = tk.Label(self.score_frame, textvariable=self.score, width=12)
         self.score_label.pack(side='top')
 
         self.removed_frame = tk.LabelFrame(self.marquee, text='removed')
         self.removed_frame.pack(side='top')
-        self.removed_label = tk.Label(self.removed_frame, textvariable=self.removed_total, width=4)
+        self.removed_label = tk.Label(self.removed_frame, textvariable=self.removed_total, width=12)
         self.removed_label.pack(side='top')
 
         self.state_label = tk.Label(self.marquee, textvariable=self.state_name)
@@ -547,16 +567,13 @@ class PySirtet(tk.Frame):
         '''
         if self.state == GameState.run:
             self.after_cancel(self.iterate_id)
-            self.pause_cover_id = self.board.create_rectangle(0, 0,
-                                                              self.opts['scale']*(self.board.width + 1),
-                                                              self.opts['scale']*(self.board.height + 1),
-                                                              fill='black',
-                                                              outline='black',
-                                                              width=0)
+            for board in (self.board, self.preview_board, self.projection_board):
+                board.add_pause_cover()
             self.set_state(GameState.pause)
         elif self.state == GameState.pause:
             self.iterate_id = self.master.after(self._get_loop_wait(), self.iterate)
-            self.board.delete(self.pause_cover_id)
+            for board in (self.board, self.preview_board, self.projection_board):
+                board.remove_pause_cover()
             self.set_state(GameState.run)
 
     def move(transformation):
