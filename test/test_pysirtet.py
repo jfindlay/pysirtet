@@ -29,7 +29,7 @@ class TestPolyomino:
         Setup program options and grid state
         '''
         self.opts = Config(test=True).get_opts()
-        self.grid = Grid(self.opts)
+        self.grid = Grid(self.opts, self.opts['board']['width'], self.opts['board']['height'])
 
     def test__check_grid(self):
         '''
@@ -144,7 +144,7 @@ class TestGrid:
         Setup program options and create a test grid instance
         '''
         self.opts = Config(test=True).get_opts()
-        self.grid = Grid(self.opts)
+        self.grid = Grid(self.opts, self.opts['board']['width'], self.opts['board']['height'])
 
     def test_get(self):
         '''
