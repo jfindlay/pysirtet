@@ -7,6 +7,10 @@ Features
 - UI
 
   * Scale game size to screen size
+  * Scale board widgets to window size
+
+    - Boards must have fixed aspect ratios
+
   * Shadowing
 
     - Shadow piece on the stack of tetrominoes where it would be placed if dropped down
