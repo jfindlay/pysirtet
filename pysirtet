@@ -708,7 +708,7 @@ class PySirtet(tk.Frame):
                 self._schedule(EventType.remove)
             self.add_piece()
         if self.opts['debug']:
-            self.grid.print()
+            self.board.grid.print()
         if self.state == GameState.running:
             self.time_elapsed.set(str(datetime.utcnow() - self.time_start)[:7])
             self.iterate_id = self._schedule(EventType.iterate)
