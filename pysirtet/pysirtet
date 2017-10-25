@@ -493,8 +493,6 @@ class PySirtet(tk.Frame):
 
         # Setup game data and state
         self.level = tk.IntVar(value=1)
-        self.points = {l + 1: self.opts['board']['width']*(l + 1)**2 for l in range(self.pdeg)}
-        self.score = tk.IntVar()
 
         self.time_start = datetime.utcnow()
         self.time_elapsed = tk.StringVar(value=str(timedelta())[:7])
@@ -542,13 +540,12 @@ class PySirtet(tk.Frame):
 
         return self.master.after(wait, action)
 
-    def _update_score(self, rows_removed):
+    def _update_removed(self, rows_removed):
         '''
-        Update the score
+        Update the count of rows removed
         '''
         self.removed[rows_removed].set(self.removed[rows_removed].get() + 1)
         self.removed['total'].set(self.removed['total'].get() + rows_removed)
-        self.score.set(self.score.get() + self.points[rows_removed])
 
     def _update_level(self):
         '''
@@ -593,11 +590,6 @@ class PySirtet(tk.Frame):
         self.level_frame.pack(side='top')
         self.level_display = tk.Label(self.level_frame, textvariable=self.level, width=12)
         self.level_display.pack(side='top')
-
-        self.score_frame = tk.LabelFrame(self.marquee, text='score')
-        self.score_frame.pack(side='top')
-        self.score_display = tk.Label(self.score_frame, textvariable=self.score, width=12)
-        self.score_display.pack(side='top')
 
         self.used_frame = tk.LabelFrame(self.marquee, text='pieces used')
         self.used_frame.pack(side='top')
@@ -691,7 +683,6 @@ class PySirtet(tk.Frame):
         self.time_elapsed.set(str(timedelta())[:7])
 
         self.level.set(1)
-        self.score.set(0)
         for removed_counter in self.removed.values():
             removed_counter.set(0)
         self.piece_count.set(0)
@@ -789,7 +780,7 @@ class PySirtet(tk.Frame):
         Remove full rows and move partial rows down into the vacancies
         '''
         full_count = self.board.remove_full_rows()
-        self._update_score(full_count)
+        self._update_removed(full_count)
         self._update_level()
 
 
