@@ -500,7 +500,7 @@ class PySirtet(tk.Frame):
         self.time_elapsed = tk.StringVar(value=str(timedelta())[:7])
 
         self.removed = {l + 1: tk.IntVar() for l in range(self.pdeg)}
-        self.removed_total = tk.IntVar()
+        self.removed['total'] = tk.IntVar()
         self.piece_count = tk.IntVar()
 
         self.next_piece = None
@@ -547,14 +547,14 @@ class PySirtet(tk.Frame):
         Update the score
         '''
         self.removed[rows_removed].set(self.removed[rows_removed].get() + 1)
-        self.removed_total.set(self.removed_total.get() + rows_removed)
+        self.removed['total'].set(self.removed['total'].get() + rows_removed)
         self.score.set(self.score.get() + self.points[rows_removed])
 
     def _update_level(self):
         '''
         Update the game level
         '''
-        if not self.opts['constant'] and self.removed_total.get() >= round(self.opts['level_multiplier']*self.level.get()*(math.log(self.level.get(), 2) + 1)):
+        if not self.opts['constant'] and self.removed['total'].get() >= round(self.opts['level_multiplier']*self.level.get()*(math.log(self.level.get(), 2) + 1)):
             self.level.set(self.level.get() + 1)
 
     def _update_piece_on_board(self, clear=False, is_active=True):
@@ -591,31 +591,38 @@ class PySirtet(tk.Frame):
 
         self.level_frame = tk.LabelFrame(self.marquee, text='level')
         self.level_frame.pack(side='top')
-        self.level_label = tk.Label(self.level_frame, textvariable=self.level, width=12)
-        self.level_label.pack(side='top')
+        self.level_display = tk.Label(self.level_frame, textvariable=self.level, width=12)
+        self.level_display.pack(side='top')
 
         self.score_frame = tk.LabelFrame(self.marquee, text='score')
         self.score_frame.pack(side='top')
-        self.score_label = tk.Label(self.score_frame, textvariable=self.score, width=12)
-        self.score_label.pack(side='top')
+        self.score_display = tk.Label(self.score_frame, textvariable=self.score, width=12)
+        self.score_display.pack(side='top')
 
         self.used_frame = tk.LabelFrame(self.marquee, text='pieces used')
         self.used_frame.pack(side='top')
-        self.used_label = tk.Label(self.used_frame, textvariable=self.piece_count, width=12)
-        self.used_label.pack(side='top')
+        self.used_display = tk.Label(self.used_frame, textvariable=self.piece_count, width=12)
+        self.used_display.pack(side='top')
 
         self.removed_frame = tk.LabelFrame(self.marquee, text='rows removed')
         self.removed_frame.pack(side='top')
-        self.removed_label = tk.Label(self.removed_frame, textvariable=self.removed_total, width=12)
-        self.removed_label.pack(side='top')
+        self.removed_stack = {}
+        for l in list(range(1, self.pdeg + 1)) + ['total']:
+            stack = self.removed_stack[l] = {}
+            stack['frame'] = tk.Frame(self.removed_frame, width=12)
+            stack['frame'].pack(side='top')
+            stack['label'] = tk.Label(stack['frame'], textvariable=self.removed[l])
+            stack['label'].pack(side='left')
+            stack['display'] = tk.Label(stack['frame'], text='{}{}'.format('' if l == 'total' else 'x', l))
+            stack['display'].pack(side='left')
 
         self.time_elapsed_frame = tk.LabelFrame(self.marquee, text='elapsed time')
         self.time_elapsed_frame.pack(side='top')
-        self.time_elapsed_label = tk.Label(self.time_elapsed_frame, textvariable=self.time_elapsed, width=12)
-        self.time_elapsed_label.pack(side='top')
+        self.time_elapsed_display = tk.Label(self.time_elapsed_frame, textvariable=self.time_elapsed, width=12)
+        self.time_elapsed_display.pack(side='top')
 
-        self.state_label = tk.Label(self.marquee, textvariable=self.state_name)
-        self.state_label.pack(side='top')
+        self.state_display = tk.Label(self.marquee, textvariable=self.state_name)
+        self.state_display.pack(side='top')
 
     def set_state(self, state):
         '''
@@ -687,7 +694,6 @@ class PySirtet(tk.Frame):
         self.score.set(0)
         for removed_counter in self.removed.values():
             removed_counter.set(0)
-        self.removed_total.set(0)
         self.piece_count.set(0)
 
         self.set_state(GameState.running)
