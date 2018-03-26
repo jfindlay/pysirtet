@@ -15,9 +15,6 @@ Features
 
     - Shadow piece on the stack of tetrominoes where it would be placed if dropped down
 
-  * Elapsed time
-  * Piece count
-
 - Config
 
   * GUI dialog

@@ -492,17 +492,19 @@ class PySirtet(tk.Frame):
         self.opts = opts
 
         # Setup game data and state
-        self.rate = tk.DoubleVar(value=self.opts['rate'])
-
         self.time_start = datetime.utcnow()
         self.time_elapsed = tk.StringVar(value=str(timedelta())[:7])
 
         self.removed = {l + 1: tk.IntVar() for l in range(self.pdeg)}
         self.removed['total'] = tk.IntVar()
-        self.piece_count = tk.IntVar()
 
+        self.piece_count = tk.IntVar()
         self.next_piece = None
         self.piece = None
+
+        self.rate = tk.DoubleVar()
+        self._set_rate()
+
         self.state_name = tk.StringVar()
         self.set_state(GameState.running)
 
@@ -513,30 +515,27 @@ class PySirtet(tk.Frame):
         self.create_widgets()
         self.setup_events()
         self.add_piece()
-        self.iterate_id = self._schedule(EventType.iterate)  # Start dropping active piece
+        self.iterate_id = self._schedule(EventType.iterate)  # Start the game cycle
 
-    def _get_rate_mlt(self):
+    def _get_rate(self, event_type):
         '''
-        Get speed multiplier for current rate
+        Get game rate for the given ``event_type``
         '''
-        return math.log(self.rate.get(), 2) + 1
+        if event_type == EventType.iterate:
+            return self.rate.get()
+        elif event_type == EventType.remove:
+            return self.rate.get()*self.opts['remove_freq']
 
     def _schedule(self, event_type):
         '''
         Schedule an asynchronous event
         '''
         if event_type == EventType.iterate:
-            delta = 1/self.opts['rate']
             action = self.iterate
         elif event_type == EventType.remove:
-            delta = self.opts['stick_fraction']/self.opts['rate']
             action = self.remove_full_rows
 
-        if self.opts['constant']:
-            wait = delta
-        else:
-            rate_multiplier = self._get_rate_mlt() if self._get_rate_mlt() > self.opts['epsilon'] else self.opts['epsilon']
-            wait = math.ceil(1e3*max(delta/rate_multiplier, self.opts['epsilon']))
+        wait = int(1e3/self._get_rate(event_type))  # Convert seconds to milliseconds
 
         return self.master.after(wait, action)
 
@@ -547,12 +546,12 @@ class PySirtet(tk.Frame):
         self.removed[rows_removed].set(self.removed[rows_removed].get() + 1)
         self.removed['total'].set(self.removed['total'].get() + rows_removed)
 
-    def _update_rate(self):
+    def _set_rate(self):
         '''
-        Update the game rate
+        Update the game rate; ensure rate is >= 1
         '''
-        if not self.opts['constant'] and self.removed['total'].get() >= round(self.opts['level_multiplier']*self.rate.get()*(math.log(self.rate.get(), 2) + 1)):
-            self.rate.set(self.rate.get() + 1)
+        new_rate = self.opts['initial_rate']*(1 if self.opts['constant'] else math.log(self.removed['total'].get()/2**4 + 2, 2))
+        self.rate.set(round(max(new_rate, 1), 2))
 
     def _update_piece_on_board(self, clear=False, is_active=True):
         '''
@@ -588,11 +587,9 @@ class PySirtet(tk.Frame):
 
         self.rate_frame = tk.LabelFrame(self.marquee, text='rate')
         self.rate_frame.pack(side='top')
-        self.rate_inner_frame = tk.Frame(self.rate_frame, width=12)
-        self.rate_inner_frame.pack(side='top')
-        self.rate_display = tk.Label(self.rate_inner_frame, textvariable=self.rate)
+        self.rate_display = tk.Label(self.rate_frame, textvariable=self.rate)
         self.rate_display.pack(side='left')
-        self.rate_unit = tk.Label(self.rate_inner_frame, text='blocks/sec')
+        self.rate_unit = tk.Label(self.rate_frame, text='blocks/sec')
         self.rate_unit.pack(side='left')
 
         self.used_frame = tk.LabelFrame(self.marquee, text='pieces used')
@@ -607,10 +604,10 @@ class PySirtet(tk.Frame):
             stack = self.removed_stack[l] = {}
             stack['frame'] = tk.Frame(self.removed_frame, width=12)
             stack['frame'].pack(side='top')
-            stack['label'] = tk.Label(stack['frame'], textvariable=self.removed[l])
-            stack['label'].pack(side='left')
-            stack['display'] = tk.Label(stack['frame'], text='{}{}'.format('' if l == 'total' else 'x', l))
+            stack['display'] = tk.Label(stack['frame'], textvariable=self.removed[l])
             stack['display'].pack(side='left')
+            stack['unit'] = tk.Label(stack['frame'], text='{}{}'.format('' if l == 'total' else 'x', l))
+            stack['unit'].pack(side='left')
 
         self.time_elapsed_frame = tk.LabelFrame(self.marquee, text='elapsed time')
         self.time_elapsed_frame.pack(side='top')
@@ -686,10 +683,11 @@ class PySirtet(tk.Frame):
         self.time_start = datetime.utcnow()
         self.time_elapsed.set(str(timedelta())[:7])
 
-        self.rate.set(self.opts['rate'])
         for removed_counter in self.removed.values():
             removed_counter.set(0)
         self.piece_count.set(0)
+
+        self._set_rate()
 
         self.set_state(GameState.running)
 
@@ -703,8 +701,8 @@ class PySirtet(tk.Frame):
         Move the active piece one row down
         '''
         if not self.move_piece(Transformation.down):
-            self._update_piece_on_board(clear=True)
-            self._update_piece_on_board(is_active=False)
+            self._update_piece_on_board(clear=True)  # Remove active
+            self._update_piece_on_board(is_active=False)  # Now inactive
             if self.board.select_full_rows():
                 self._schedule(EventType.remove)
             self.add_piece()
@@ -785,7 +783,7 @@ class PySirtet(tk.Frame):
         '''
         full_count = self.board.remove_full_rows()
         self._update_removed(full_count)
-        self._update_rate()
+        self._set_rate()
 
 
 class Config:
@@ -808,10 +806,9 @@ class Config:
                 'height': 22,  # [blocks]
             },
             'epsilon': sys.float_info.epsilon*3,  # Minimum float value allowed by game
-            'rate': 1,  # [blocks/second] Initial rate: increases by log_2 of the previous rate level
-            'level_multiplier': 16,  # Initial number of rows cleared before rate advancement: subsequently increases by log_2 of the previous rate level
+            'initial_rate': 1,  # [blocks/second]
+            'remove_freq': 2,  # Number of game cycles to wait to remove a row after it becomes full
             'constant': False,  # Do not increase game rate
-            'stick_fraction': 1/4,  # Fraction of the game loop to wait when a piece bottoms out and a new piece is introduced
             'shadow': 'projection',  # TODO: proposition
             'keys': {
                 'pause': 'p',
@@ -884,17 +881,15 @@ class Config:
         # Game configs
         if config.has_section('game'):
             opts['debug'] = config.get('game', 'debug', vars=self.defaults)
-            opts['rate'] = config.get('game', 'rate', vars=self.defaults) or 1
-            opts['level_multiplier'] = config.get('game', 'level_multiplier', vars=self.defaults)
+            opts['initial_rate'] = config.get('game', 'initial_rate', vars=self.defaults) or 1
             opts['constant'] = config.get('game', 'constant', vars=self.defaults)
-            opts['stick_fraction'] = config.get('game', 'stick_fraction', vars=self.defaults)
+            opts['remove_freq'] = config.get('game', 'remove_freq', vars=self.defaults)
             opts['shadow'] = config.get('game', 'shadow', vars=self.defaults)
         else:
             opts['debug'] = self.defaults['debug']
-            opts['rate'] = self.defaults['rate']
-            opts['level_multiplier'] = self.defaults['level_multiplier']
+            opts['initial_rate'] = self.defaults['initial_rate']
             opts['constant'] = self.defaults['constant']
-            opts['stick_fraction'] = self.defaults['stick_fraction']
+            opts['remove_freq'] = self.defaults['remove_freq']
             opts['shadow'] = self.defaults['shadow']
 
         # Keys configs
@@ -930,8 +925,8 @@ class Config:
                                 default=self.defaults['board']['scale'],
                                 type=int,
                                 help='Board scale [pixels/block]')
-        arg_parser.add_argument('-r', '--rate',
-                                default=self.defaults['rate'],
+        arg_parser.add_argument('-r', '--initial-rate',
+                                default=self.defaults['initial_rate'],
                                 type=float,
                                 help='Initial rate [blocks/second]')
         arg_parser.add_argument('-o', '--constant',
