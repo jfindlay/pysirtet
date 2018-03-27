@@ -7,7 +7,7 @@ Features
 - UI
 
   * Scale game size to screen size
-  * Scale board widgets to window size
+  * Scale widgets to window size
 
     - Boards must have fixed aspect ratios
 
@@ -19,11 +19,6 @@ Features
 
   * GUI dialog
   * Read and write to config file
-
-- Scoring
-
-  * Save high score list to a file
-  * highlight top ten or top score in the status bar like ksirtet
 
 
 Packaging
