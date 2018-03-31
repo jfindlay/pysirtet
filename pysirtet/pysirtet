@@ -43,8 +43,7 @@ class EventType(enum.Enum):
     '''
     Types of asynchronous events used by the game
     '''
-    iterate = 0
-    tick = 1
+    iterate = 1
     remove = 2
 
 
@@ -226,14 +225,14 @@ tetrominoes = (
 
 class TimerVar(tk.StringVar):
     '''
-    Simple timer string widget variable
+    Timer string widget variable with start/stop facilities
     '''
     def __init__(self, *args, **kwargs):
         '''
         Setup TimeVar object
         '''
-        self.second = timedelta(seconds=1)  # Create once for faster calculation
-        self.counter = self._validate(kwargs.pop('value')) if 'value' in kwargs else timedelta()
+        self.counter = self._validate(kwargs.pop('value') if 'value' in kwargs else timedelta())
+        self.counting_since = None  # Timestamp of last start/resume
 
         super().__init__(*args, value=self._to_str(self.counter), **kwargs)
 
@@ -254,23 +253,43 @@ class TimerVar(tk.StringVar):
 
     def get(self):
         '''
-        Get the value as a string
+        Get elapsed time as a string
         '''
+        self.set()  # First update value to latest time
         return super().get()
 
-    def set(self, value):
+    def set(self, value=None):
         '''
-        Set the value
+        Reset the timer with a new value or update the value to the current
+        time
         '''
-        self.counter = self._validate(value)
-        return super().set(self._to_str(value))
+        if value != None:
+            self.counter = self._validate(value)
+            count = self.counter
+            if not value:
+                self.counting_since = datetime.now()
+        elif self.counting_since:
+            count = datetime.now() - self.counting_since + self.counter
+        else:
+            count = self.counter
+        return super().set(self._to_str(count))
 
-    def tick(self):
+    def start(self):
         '''
-        Increase time counter by delta
+        Begin/resume counting
         '''
-        self.counter += self.second
-        super().set(self._to_str(self.counter))
+        if not self.counting_since:
+            self.counting_since = datetime.now()
+        self.set()
+
+    def stop(self):
+        '''
+        Accumulate active counting into counter and pause counting
+        '''
+        if self.counting_since:
+            self.counter += datetime.now() - self.counting_since
+            self.counting_since = None
+        self.set()
 
 
 class Grid:
@@ -542,14 +561,15 @@ class PySirtet(tk.Frame):
         self.opts = opts
 
         # Setup game data and state
-        self.time_elapsed = TimerVar()
-
         self.removed = {l + 1: tk.IntVar() for l in range(self.pdeg)}
         self.removed['total'] = tk.IntVar()
 
         self.piece_count = tk.IntVar()
         self.next_piece = None
         self.piece = None
+
+        self.time_elapsed = TimerVar()
+        self.time_elapsed.start()
 
         self.rate = tk.DoubleVar()
         self._set_rate()
@@ -564,7 +584,6 @@ class PySirtet(tk.Frame):
         self.setup_events()
         self.add_piece()
         self.iterate_id = self._schedule(EventType.iterate)  # Start the game cycle
-        self.tick_id = self._schedule(EventType.tick)  # Start counting
 
     def _schedule(self, event_type):
         '''
@@ -573,9 +592,6 @@ class PySirtet(tk.Frame):
         if event_type == EventType.iterate:
             action = self.iterate
             rate = self.rate.get()
-        elif event_type == EventType.tick:
-            action = self.tick
-            rate = 1
         elif event_type == EventType.remove:
             action = self.remove_full_rows
             rate = self.rate.get()*self.opts['remove_freq']
@@ -684,13 +700,13 @@ class PySirtet(tk.Frame):
         '''
         if self.state == GameState.running:
             self.after_cancel(self.iterate_id)
-            self.after_cancel(self.tick_id)
+            self.time_elapsed.stop()
             for board in (self.board, self.preview_board, self.projection_board):
                 board.add_pause_cover()
             self.set_state(GameState.paused)
         elif self.state == GameState.paused:
             self.iterate_id = self._schedule(EventType.iterate)
-            self.tick_id = self._schedule(EventType.tick)
+            self.time_elapsed.start()
             for board in (self.board, self.preview_board, self.projection_board):
                 board.remove_pause_cover()
             self.set_state(GameState.running)
@@ -721,8 +737,6 @@ class PySirtet(tk.Frame):
         Restart the game
         '''
         # Setup game state
-        self.time_elapsed.set(timedelta())
-
         self.board.clear()
         self.projection_board.clear()
         self.piece = None
@@ -731,6 +745,9 @@ class PySirtet(tk.Frame):
             removed_counter.set(0)
         self.piece_count.set(0)
 
+        self.time_elapsed.set(timedelta())
+        self.time_elapsed.start()
+
         self._set_rate()
         self.set_state(GameState.running)
 
@@ -738,15 +755,6 @@ class PySirtet(tk.Frame):
         self.restart_button.destroy()
         self.add_piece()
         self.iterate_id = self._schedule(EventType.iterate)
-        self.tick_id = self._schedule(EventType.tick)
-
-    def tick(self):
-        '''
-        Update the timer
-        '''
-        if self.state == GameState.running:
-            self.time_elapsed.tick()
-            self.iterate_id = self._schedule(EventType.tick)
 
     def iterate(self):
         '''
@@ -763,6 +771,7 @@ class PySirtet(tk.Frame):
         if self.opts['debug']:
             self.board.grid.print()
         if self.state == GameState.running:
+            self.time_elapsed.set()
             self.iterate_id = self._schedule(EventType.iterate)
         elif self.state == GameState.over:
             self.restart_button = tk.Button(self.marquee, text='restart', command=self.restart)
