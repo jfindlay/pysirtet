@@ -752,6 +752,8 @@ class PySirtet(tk.Frame):
         '''
         Move the active piece one row down
         '''
+        if self.state == GameState.paused:
+            return
         if not self.move_piece(Transformation.down):
             self._update_piece_on_board(clear=True)  # Remove active
             self._update_piece_on_board(is_active=False)  # Now inactive
@@ -762,7 +764,7 @@ class PySirtet(tk.Frame):
             self.board.grid.print()
         if self.state == GameState.running:
             self.iterate_id = self._schedule(EventType.iterate)
-        else:
+        elif self.state == GameState.over:
             self.restart_button = tk.Button(self.marquee, text='restart', command=self.restart)
             self.restart_button.pack(side='top')
 
