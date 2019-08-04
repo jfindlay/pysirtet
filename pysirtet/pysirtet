@@ -924,7 +924,7 @@ class Config:
         '''
         # TODO: set opts equal to defaults, then override with config file values, then command line values
         opts = {}
-        config = configparser.SafeConfigParser()
+        config = configparser.ConfigParser()
         config.read(config_file)
 
         # Internal configs
