@@ -251,6 +251,12 @@ class TimerVar(tk.StringVar):
         '''
         return str(value)[:7]
 
+    def as_seconds(self):
+        '''
+        Return timer value in seconds
+        '''
+        return self.counter.total_seconds()
+
     def get(self):
         '''
         Get elapsed time as a string
@@ -573,6 +579,7 @@ class PySirtet(tk.Frame):
 
         self.actual_rate = 0.0
         self.display_rate = tk.StringVar()
+        self.piece_rate = tk.StringVar()
         self._set_rate()
         self.state_name = tk.StringVar()
         self.set_state(GameState.running)
@@ -613,6 +620,8 @@ class PySirtet(tk.Frame):
         new_rate = self.opts['initial_rate']*(1 if self.opts['constant'] else math.log(self.removed['total'].get()/2**4 + 2, 2))
         self.actual_rate = max(new_rate, 1)
         self.display_rate.set('{:.2f}'.format(self.actual_rate))
+        print(self.removed['total'].get(), self.time_elapsed.as_seconds())
+        self.piece_rate.set('{:.2f}'.format(self.removed['total'].get()/(self.time_elapsed.as_seconds() or 1)))
 
     def _update_piece_on_board(self, clear=False, is_active=True):
         '''
@@ -646,12 +655,19 @@ class PySirtet(tk.Frame):
         self.preview_board = Board(self.opts, self.preview_frame, self.pdeg, self.pdeg)
         self.preview_board.pack(side='top')
 
-        self.rate_frame = tk.LabelFrame(self.marquee, text='rate')
+        self.rate_frame = tk.LabelFrame(self.marquee, text='fall rate')
         self.rate_frame.pack(side='top')
         self.rate_display = tk.Label(self.rate_frame, textvariable=self.display_rate)
         self.rate_display.pack(side='left')
         self.rate_unit = tk.Label(self.rate_frame, text='blocks/sec')
         self.rate_unit.pack(side='left')
+
+        self.piece_rate_frame = tk.LabelFrame(self.marquee, text='piece rate')
+        self.piece_rate_frame.pack(side='top')
+        self.piece_rate_display = tk.Label(self.piece_rate_frame, textvariable=self.piece_rate)
+        self.piece_rate_display.pack(side='left')
+        self.piece_rate_unit = tk.Label(self.piece_rate_frame, text='pieces/sec')
+        self.piece_rate_unit.pack(side='left')
 
         self.used_frame = tk.LabelFrame(self.marquee, text='pieces used')
         self.used_frame.pack(side='top')
@@ -665,8 +681,8 @@ class PySirtet(tk.Frame):
             stack = self.removed_stack[l] = {}
             stack['frame'] = tk.Frame(self.removed_frame, width=12)
             stack['frame'].pack(side='top')
-            stack['display'] = tk.Label(stack['frame'], textvariable=self.removed[l])
-            stack['display'].pack(side='left')
+            stack['quantity'] = tk.Label(stack['frame'], textvariable=self.removed[l])
+            stack['quantity'].pack(side='left')
             stack['unit'] = tk.Label(stack['frame'], text='{}{}'.format('' if l == 'total' else 'x', l))
             stack['unit'].pack(side='left')
 
