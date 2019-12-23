@@ -571,7 +571,8 @@ class PySirtet(tk.Frame):
         self.time_elapsed = TimerVar()
         self.time_elapsed.start()
 
-        self.rate = tk.DoubleVar()
+        self.actual_rate = 0.0
+        self.display_rate = tk.StringVar()
         self._set_rate()
         self.state_name = tk.StringVar()
         self.set_state(GameState.running)
@@ -591,10 +592,10 @@ class PySirtet(tk.Frame):
         '''
         if event_type == EventType.iterate:
             action = self.iterate
-            rate = self.rate.get()
+            rate = self.actual_rate
         elif event_type == EventType.remove:
             action = self.remove_full_rows
-            rate = self.rate.get()*self.opts['remove_freq']
+            rate = self.actual_rate*self.opts['remove_freq']
 
         return self.master.after(int(1e3/rate), action)  # Convert seconds to milliseconds
 
@@ -610,8 +611,8 @@ class PySirtet(tk.Frame):
         Update the game rate; ensure rate is >= 1
         '''
         new_rate = self.opts['initial_rate']*(1 if self.opts['constant'] else math.log(self.removed['total'].get()/2**4 + 2, 2))
-        self.rate.set(max(new_rate, 1))
-        print(self.rate.get())
+        self.actual_rate = max(new_rate, 1)
+        self.display_rate.set('{:.2f}'.format(self.actual_rate))
 
     def _update_piece_on_board(self, clear=False, is_active=True):
         '''
@@ -647,7 +648,7 @@ class PySirtet(tk.Frame):
 
         self.rate_frame = tk.LabelFrame(self.marquee, text='rate')
         self.rate_frame.pack(side='top')
-        self.rate_display = tk.Label(self.rate_frame, textvariable=self.rate)
+        self.rate_display = tk.Label(self.rate_frame, textvariable=self.display_rate)
         self.rate_display.pack(side='left')
         self.rate_unit = tk.Label(self.rate_frame, text='blocks/sec')
         self.rate_unit.pack(side='left')
@@ -919,6 +920,19 @@ class Config:
             board_size[token] = int(value) if value is not None else 0
         return board_size
 
+    def _initial_rate(ir):
+        '''
+        Verify that initial rate is >= 1
+        '''
+        try:
+            ir = float(ir)
+        except ValueError:
+            raise ArgumentTypeError('Initial rate is not a number: {}'.format(ir))
+        if ir < 1:
+            raise ArgumentTypeError('Initial rate is too low: {}'.format(ir))
+        else:
+            return ir
+
     def _get_config(self, config_file):
         '''
         Read configs from config file
@@ -991,8 +1005,8 @@ class Config:
                                 help='Board scale [pixels/block]')
         arg_parser.add_argument('-r', '--initial-rate',
                                 default=self.defaults['initial_rate'],
-                                type=float,
-                                help='Initial rate [blocks/second]')
+                                type=self._initial_rate,
+                                help='Initial rate: must be >= 1 [blocks/second]')
         arg_parser.add_argument('-o', '--constant',
                                 default=self.defaults['constant'],
                                 action='store_true',
