@@ -552,13 +552,13 @@ class PySirtet(tk.Frame):
     '''
     Main game window
     '''
-    def __init__(self, opts, master=None):
+    def __init__(self, config, master=None):
         '''
         Setup game
         '''
         # Setup options
         self.pdeg = 4  # Polyomino degree (hardcode to tetromino)
-        self.opts = opts
+        self.opts = config.opts
 
         # Setup game data and state
         self.removed = {l + 1: tk.IntVar() for l in range(self.pdeg)}
@@ -885,6 +885,7 @@ class Config:
                 'drop': 'c',
             }
         }
+        self.opts = self.get_opts()
 
     def _config_file(self, arg):
         '''
@@ -1024,7 +1025,7 @@ def pysirtet():
     Execute the game
     '''
     try:
-        PySirtet(Config().get_opts(), master=tk.Tk(className='pysirtet')).mainloop()
+        PySirtet(Config(), master=tk.Tk(className='pysirtet')).mainloop()
     except KeyboardInterrupt:
         exit(0)
 
