@@ -3,6 +3,7 @@ Features
 
 - Configurably allow monomino, domino, trominoes(, pentominoes, ...?)
 - AI
+- Event log: timestamp, event type: control input, piece added, piece fixed, row removed
 
 - UI
 

@@ -223,6 +223,48 @@ tetrominoes = (
 )
 
 
+class PrecisionVar(tk.StringVar):
+    '''
+    Represent the value at the specified precision while maintaining the actual
+    value at full precision
+    '''
+    def __init__(self, *args, precision=2, **kwargs):
+        '''
+        Setup PrecisionVar object
+        '''
+        self.precision = precision
+        self.float_value = self._validate(kwargs.pop('value') if 'value' in kwargs else 0.0)
+        super().__init__(*args, value=self._fmt(), **kwargs)
+
+    def _validate(self, value):
+        '''
+        Validate input value
+        '''
+        if isinstance(value, (int, float)) and value >= 0:
+            return value
+        else:
+            raise TypeError('value must be a nonnegative number')
+
+    def _fmt(self):
+        '''
+        Format decimal string representation
+        '''
+        return '{{:.{}f}}'.format(self.precision).format(self.float_value)
+
+    def get(self, raw=False):
+        '''
+        Get value formatted to specified precision
+        '''
+        return self.float_value if raw else super().get()
+
+    def set(self, value=0.0):
+        '''
+        Set value
+        '''
+        self.float_value = self._validate(value)
+        super().set(self._fmt())
+
+
 class TimerVar(tk.StringVar):
     '''
     Timer string widget variable with start/stop facilities
@@ -231,10 +273,10 @@ class TimerVar(tk.StringVar):
         '''
         Setup TimeVar object
         '''
-        self.counter = self._validate(kwargs.pop('value') if 'value' in kwargs else timedelta())
-        self.counting_since = None  # Timestamp of last start/resume
+        self.accumulated_elapsed = self._validate(kwargs.pop('value') if 'value' in kwargs else timedelta())
+        self.active_counting_since = None  # Timestamp of last start/resume
 
-        super().__init__(*args, value=self._to_str(self.counter), **kwargs)
+        super().__init__(*args, value=self._to_str(self.accumulated_elapsed), **kwargs)
 
     def _validate(self, value):
         '''
@@ -247,55 +289,42 @@ class TimerVar(tk.StringVar):
 
     def _to_str(self, value):
         '''
-        Convert value timedelta to string
+        Convert value timedelta to string without microseconds
         '''
         return str(value)[:7]
 
-    def as_seconds(self):
+    def get(self, as_seconds=False):
         '''
-        Return timer value in seconds
+        Get elapsed time as a string or as total seconds
         '''
-        return self.counter.total_seconds()
+        computed = datetime.now() - self.active_counting_since + self.accumulated_elapsed
+        super().set(self._to_str(computed))  # TkInter uses an internal method to get the value into a widget, so we need to update the parent value here
+        return computed.total_seconds() if as_seconds else super().get()
 
-    def get(self):
-        '''
-        Get elapsed time as a string
-        '''
-        self.set()  # First update value to latest time
-        return super().get()
-
-    def set(self, value=None):
+    def set(self, value=timedelta()):
         '''
         Reset the timer with a new value or update the value to the current
         time
         '''
-        if value != None:
-            self.counter = self._validate(value)
-            count = self.counter
-            if not value:
-                self.counting_since = datetime.now()
-        elif self.counting_since:
-            count = datetime.now() - self.counting_since + self.counter
-        else:
-            count = self.counter
-        return super().set(self._to_str(count))
+        if self._validate(value):  # Reset active counter
+            self.accumulated_elapsed = value
+            self.active_counting_since = None
 
     def start(self):
         '''
         Begin/resume counting
         '''
-        if not self.counting_since:
-            self.counting_since = datetime.now()
-        self.set()
+        if not self.active_counting_since:  # Start action is idempotent
+            self.active_counting_since = datetime.now()
 
     def stop(self):
         '''
-        Accumulate active counting into counter and pause counting
+        Collect active counting into `accumulated_elapsed` and reset
+        `active_counting_since`
         '''
-        if self.counting_since:
-            self.counter += datetime.now() - self.counting_since
-            self.counting_since = None
-        self.set()
+        if self.active_counting_since:  # Stop action is idempotent
+            self.accumulated_elapsed += datetime.now() - self.active_counting_since
+            self.active_counting_since = None
 
 
 class Grid:
@@ -567,20 +596,21 @@ class PySirtet(tk.Frame):
         self.opts = config.opts
 
         # Setup game data and state
-        self.removed = {l + 1: tk.IntVar() for l in range(self.pdeg)}
+        self.removed = {r + 1: tk.IntVar() for r in range(self.pdeg)}
         self.removed['total'] = tk.IntVar()
 
-        self.piece_count = tk.IntVar()
+        self.used = {t.name: tk.IntVar() for t in tetrominoes}
+        self.used['total'] = tk.IntVar()
         self.next_piece = None
         self.piece = None
 
         self.time_elapsed = TimerVar()
         self.time_elapsed.start()
 
-        self.actual_rate = 0.0
-        self.display_rate = tk.StringVar()
-        self.piece_rate = tk.StringVar()
-        self._set_rate()
+        self.rate = PrecisionVar()
+        self.piece_rate = PrecisionVar()
+        self.row_rate = PrecisionVar()
+        self._update_rates()
         self.state_name = tk.StringVar()
         self.set_state(GameState.running)
 
@@ -599,10 +629,10 @@ class PySirtet(tk.Frame):
         '''
         if event_type == EventType.iterate:
             action = self.iterate
-            rate = self.actual_rate
+            rate = self.rate.get(raw=True)
         elif event_type == EventType.remove:
             action = self.remove_full_rows
-            rate = self.actual_rate*self.opts['remove_freq']
+            rate = self.rate.get(raw=True)*self.opts['remove_freq']
 
         return self.master.after(int(1e3/rate), action)  # Convert seconds to milliseconds
 
@@ -613,15 +643,14 @@ class PySirtet(tk.Frame):
         self.removed[rows_removed].set(self.removed[rows_removed].get() + 1)
         self.removed['total'].set(self.removed['total'].get() + rows_removed)
 
-    def _set_rate(self):
+    def _update_rates(self):
         '''
-        Update the game rate; ensure rate is >= 1
+        Update computed rates
         '''
         new_rate = self.opts['initial_rate']*(1 if self.opts['constant'] else math.log(self.removed['total'].get()/2**4 + 2, 2))
-        self.actual_rate = max(new_rate, 1)
-        self.display_rate.set('{:.2f}'.format(self.actual_rate))
-        print(self.removed['total'].get(), self.time_elapsed.as_seconds())
-        self.piece_rate.set('{:.2f}'.format(self.removed['total'].get()/(self.time_elapsed.as_seconds() or 1)))
+        self.rate.set(max(new_rate, 1))
+        self.piece_rate.set(self.used['total'].get()/(self.time_elapsed.get(as_seconds=True) or 1))
+        self.row_rate.set(self.removed['total'].get()/(self.time_elapsed.get(as_seconds=True) or 1))
 
     def _update_piece_on_board(self, clear=False, is_active=True):
         '''
@@ -657,7 +686,7 @@ class PySirtet(tk.Frame):
 
         self.rate_frame = tk.LabelFrame(self.marquee, text='fall rate')
         self.rate_frame.pack(side='top')
-        self.rate_display = tk.Label(self.rate_frame, textvariable=self.display_rate)
+        self.rate_display = tk.Label(self.rate_frame, textvariable=self.rate)
         self.rate_display.pack(side='left')
         self.rate_unit = tk.Label(self.rate_frame, text='blocks/sec')
         self.rate_unit.pack(side='left')
@@ -669,21 +698,36 @@ class PySirtet(tk.Frame):
         self.piece_rate_unit = tk.Label(self.piece_rate_frame, text='pieces/sec')
         self.piece_rate_unit.pack(side='left')
 
+        self.row_rate_frame = tk.LabelFrame(self.marquee, text='row rate')
+        self.row_rate_frame.pack(side='top')
+        self.row_rate_display = tk.Label(self.row_rate_frame, textvariable=self.row_rate)
+        self.row_rate_display.pack(side='left')
+        self.row_rate_unit = tk.Label(self.row_rate_frame, text='rows/sec')
+        self.row_rate_unit.pack(side='left')
+
         self.used_frame = tk.LabelFrame(self.marquee, text='pieces used')
         self.used_frame.pack(side='top')
-        self.used_display = tk.Label(self.used_frame, textvariable=self.piece_count, width=12)
-        self.used_display.pack(side='top')
+        self.used_stack = {}
+        class Total : name = 'total'
+        for t in tetrominoes + (Total(),):
+            stack = self.used_stack[t.name] = {}
+            stack['frame'] = tk.Frame(self.used_frame, width=12)
+            stack['frame'].pack(side='top')
+            stack['quantity'] = tk.Label(stack['frame'], textvariable=self.used[t.name])
+            stack['quantity'].pack(side='left')
+            stack['unit'] = tk.Label(stack['frame'], text='{}{}'.format('' if t.name == 'total' else 'x', t.name))
+            stack['unit'].pack(side='left')
 
         self.removed_frame = tk.LabelFrame(self.marquee, text='rows removed')
         self.removed_frame.pack(side='top')
         self.removed_stack = {}
-        for l in list(range(1, self.pdeg + 1)) + ['total']:
-            stack = self.removed_stack[l] = {}
+        for r in list(range(1, self.pdeg + 1)) + ['total']:
+            stack = self.removed_stack[r] = {}
             stack['frame'] = tk.Frame(self.removed_frame, width=12)
             stack['frame'].pack(side='top')
-            stack['quantity'] = tk.Label(stack['frame'], textvariable=self.removed[l])
+            stack['quantity'] = tk.Label(stack['frame'], textvariable=self.removed[r])
             stack['quantity'].pack(side='left')
-            stack['unit'] = tk.Label(stack['frame'], text='{}{}'.format('' if l == 'total' else 'x', l))
+            stack['unit'] = tk.Label(stack['frame'], text='{}{}'.format('' if r == 'total' else 'x', r))
             stack['unit'].pack(side='left')
 
         self.time_elapsed_frame = tk.LabelFrame(self.marquee, text='elapsed time')
@@ -761,12 +805,13 @@ class PySirtet(tk.Frame):
 
         for removed_counter in self.removed.values():
             removed_counter.set(0)
-        self.piece_count.set(0)
+        for piece_counter in self.used.values():
+            piece_counter.set(0)
 
-        self.time_elapsed.set(timedelta())
+        self.time_elapsed.set()
         self.time_elapsed.start()
 
-        self._set_rate()
+        self._update_rates()
         self.set_state(GameState.running)
 
         # Setup TK
@@ -789,7 +834,7 @@ class PySirtet(tk.Frame):
         if self.opts['debug']:
             self.board.grid.print()
         if self.state == GameState.running:
-            self.time_elapsed.set()
+            self._update_rates()
             self.iterate_id = self._schedule(EventType.iterate)
         elif self.state == GameState.over:
             self.restart_button = tk.Button(self.marquee, text='restart', command=self.restart)
@@ -814,7 +859,8 @@ class PySirtet(tk.Frame):
         if not self.next_piece:
             get_next_piece()
         self.piece = copy.deepcopy(self.next_piece)
-        self.piece_count.set(self.piece_count.get() + 1)
+        self.used[self.next_piece.name].set(self.used[self.next_piece.name].get() + 1)
+        self.used['total'].set(self.used['total'].get() + 1)
         get_next_piece()
 
         if self.piece.translate([self.board.width//2 - self.preview_board.width//2,
@@ -863,7 +909,6 @@ class PySirtet(tk.Frame):
         '''
         full_count = self.board.remove_full_rows()
         self._update_removed(full_count)
-        self._set_rate()
 
 
 class Config:
