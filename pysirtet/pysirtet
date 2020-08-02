@@ -8,11 +8,15 @@ import math
 import copy
 import enum
 import random
+import shutil
+import argparse
 import configparser
 from decimal import Decimal as D
 from datetime import datetime, timedelta
-from argparse import ArgumentParser, ArgumentTypeError, ArgumentDefaultsHelpFormatter
 import tkinter as tk
+
+# http://findlay.space/posts/python-argparse-columns/
+os.environ['COLUMNS'] = str(shutil.get_terminal_size().columns)
 
 
 class Transformation(enum.Enum):
@@ -972,7 +976,7 @@ class Config:
 
         # Validate size
         if not match:
-            raise ArgumentTypeError('Incorrect size')
+            raise argparse.ArgumentTypeError('Incorrect size')
 
         # Construct return data and return
         board_size = {}
@@ -988,9 +992,9 @@ class Config:
         try:
             ir = float(ir)
         except ValueError:
-            raise ArgumentTypeError('Initial rate is not a number: {}'.format(ir))
+            raise argparse.ArgumentTypeError('Initial rate is not a number: {}'.format(ir))
         if ir < 1:
-            raise ArgumentTypeError('Initial rate is too low: {}'.format(ir))
+            raise argparse.ArgumentTypeError('Initial rate is too low: {}'.format(ir))
         else:
             return ir
 
@@ -1046,8 +1050,8 @@ class Config:
         Read configs from command line
         '''
         desc='Polyomino tessellation game written in Tkinter'
-        arg_parser = ArgumentParser(description=desc,
-                                    formatter_class=ArgumentDefaultsHelpFormatter)
+        arg_parser = argparse.ArgumentParser(description=desc,
+                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         arg_parser.add_argument('-c', '--config-file',
                                 default=self.defaults['config_file'],
                                 type=self._config_file,
