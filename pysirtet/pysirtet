@@ -277,9 +277,7 @@ class TimerVar(tk.StringVar):
         '''
         Setup TimeVar object
         '''
-        self.accumulated_elapsed = self._validate(kwargs.pop('value') if 'value' in kwargs else timedelta())
-        self.active_counting_since = None  # Timestamp of last start/resume
-
+        self.set(kwargs.pop('value') if 'value' in kwargs else timedelta())
         super().__init__(*args, value=self._to_str(self.accumulated_elapsed), **kwargs)
 
     def _validate(self, value):
@@ -310,9 +308,8 @@ class TimerVar(tk.StringVar):
         Reset the timer with a new value or update the value to the current
         time
         '''
-        if self._validate(value):  # Reset active counter
-            self.accumulated_elapsed = value
-            self.active_counting_since = None
+        self.accumulated_elapsed = value  # Reset active counter
+        self.active_counting_since = None  # Timestamp of last start/resume
 
     def start(self):
         '''
