@@ -850,8 +850,7 @@ class PySirtet(tk.Frame):
             Get a new piece
             '''
             self.preview_board.clear()
-            name = random.choice(tetrominoes).name
-            self.next_piece = copy.deepcopy([t for t in tetrominoes if t.name == name][0])
+            self.next_piece = copy.deepcopy(random.choice(tetrominoes))
             self.next_piece.translate([self.preview_board.width//2,
                                        self.preview_board.height//2],
                                       self.preview_board.grid)
