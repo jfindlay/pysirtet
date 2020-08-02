@@ -933,7 +933,7 @@ class Config:
             'epsilon': sys.float_info.epsilon*3,  # Minimum float value allowed by game
             'min_rate': 0.2,  # Minimum allowed rate [blocks/second]
             'initial_rate': 1,  # Default initial rate [blocks/second]
-            'remove_freq': 2,  # Number of game cycles to wait to remove a row after it becomes full
+            'remove_freq': 1,  # Number of game cycles to wait to remove a row after it becomes full
             'constant': False,  # Do not increase game rate
             'shadow': 'projection',  # TODO: proposition
             'keys': {
