@@ -652,7 +652,7 @@ class PySirtet(tk.Frame):
         Update computed rates
         '''
         new_rate = self.opts['initial_rate']*(1 if self.opts['constant'] else math.log(self.removed['total'].get()/2**4 + 2, 2))
-        self.rate.set(max(new_rate, 1))
+        self.rate.set(max(new_rate, self.opts['min_rate']))
         self.piece_rate.set(self.used['total'].get()/(self.time_elapsed.get(as_seconds=True) or 1))
         self.row_rate.set(self.removed['total'].get()/(self.time_elapsed.get(as_seconds=True) or 1))
 
@@ -935,7 +935,8 @@ class Config:
                 'height': 22,  # [blocks]
             },
             'epsilon': sys.float_info.epsilon*3,  # Minimum float value allowed by game
-            'initial_rate': 1,  # [blocks/second]
+            'min_rate': 0.2,  # Minimum allowed rate [blocks/second]
+            'initial_rate': 1,  # Default initial rate [blocks/second]
             'remove_freq': 2,  # Number of game cycles to wait to remove a row after it becomes full
             'constant': False,  # Do not increase game rate
             'shadow': 'projection',  # TODO: proposition
@@ -985,15 +986,15 @@ class Config:
             board_size[token] = int(value) if value is not None else 0
         return board_size
 
-    def _initial_rate(ir):
+    def _initial_rate(self, ir):
         '''
-        Verify that initial rate is >= 1
+        Verify that initial rate is >= minimum rate
         '''
         try:
             ir = float(ir)
         except ValueError:
             raise argparse.ArgumentTypeError('Initial rate is not a number: {}'.format(ir))
-        if ir < 1:
+        if ir < self.defaults['min_rate']:
             raise argparse.ArgumentTypeError('Initial rate is too low: {}'.format(ir))
         else:
             return ir
@@ -1024,12 +1025,14 @@ class Config:
         # Game configs
         if config.has_section('game'):
             opts['debug'] = config.get('game', 'debug', vars=self.defaults)
-            opts['initial_rate'] = config.get('game', 'initial_rate', vars=self.defaults) or 1
+            opts['min_rate'] = config.get('game', 'min_rate', vars=self.defaults)
+            opts['initial_rate'] = config.get('game', 'initial_rate', vars=self.defaults)
             opts['constant'] = config.get('game', 'constant', vars=self.defaults)
             opts['remove_freq'] = config.get('game', 'remove_freq', vars=self.defaults)
             opts['shadow'] = config.get('game', 'shadow', vars=self.defaults)
         else:
             opts['debug'] = self.defaults['debug']
+            opts['min_rate'] = self.defaults['min_rate']
             opts['initial_rate'] = self.defaults['initial_rate']
             opts['constant'] = self.defaults['constant']
             opts['remove_freq'] = self.defaults['remove_freq']
@@ -1071,7 +1074,7 @@ class Config:
         arg_parser.add_argument('-r', '--initial-rate',
                                 default=self.defaults['initial_rate'],
                                 type=self._initial_rate,
-                                help='Initial rate: must be >= 1 [blocks/second]')
+                                help='Initial rate: must be >= {} [blocks/second]'.format(self.defaults['min_rate']))
         arg_parser.add_argument('-o', '--constant',
                                 default=self.defaults['constant'],
                                 action='store_true',
